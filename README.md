@@ -33,6 +33,13 @@ brew install yasm
 4. sudo make install (defaults: /usr/local/lib + /usr/local/include/SDL2 + sdl2-config)
 ```
 
+## Building
+
+```
+make clean
+make
+```
+
 ## Testing
 
 You can easily test this application by streaming data from your device to a UDP endpoint.
