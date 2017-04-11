@@ -1,3 +1,5 @@
+CC=g++
+
 # use pkg-config for getting CFLAGS and LDLIBS
 FFMPEG_LIBS=    libavdevice                        \
                 libavformat                        \
