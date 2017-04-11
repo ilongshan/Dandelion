@@ -11,6 +11,10 @@
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
 
+// Increase:
+// analyzeduration
+// probesize
+
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_thread.h>
 
@@ -41,6 +45,7 @@ void closeSDL();
 // The window we'll be rendering to
 SDL_Window* gWindow = NULL;
 SDL_Renderer* renderer;
+SDL_Texture *texture;
 
 int startTicks;
 // A thread that waits for incoming registrations
@@ -181,7 +186,7 @@ int decode(AVCodecContext *avctx, AVFrame *frame, int *got_frame, AVPacket *pkt)
 //void *processStream(void *dummy) {
 void* processStream() {
 
-	SDL_Texture *texture;
+	
 	AVFormatContext *pFormatCtx = NULL;
 	AVCodecContext *pCodecCtxOrig = NULL;
 	AVCodecContext *pCodecCtx = NULL;
@@ -215,7 +220,7 @@ void* processStream() {
 
     //char *url = "tcp://127.0.0.1:51234?overrun_nonfatal=1";
     // In case of packet loss (green frames, etc.) use &fifo_size=50000000
-    char *url = "udp://127.0.0.1:1234?overrun_nonfatal=1";
+    char *url = "udp://127.0.0.1:1234?overrun_nonfatal=1&fifo_size=50000000";
 	
 	//char* url = urlStream;
 	avformat_network_init();
@@ -244,7 +249,11 @@ void* processStream() {
 	 printf("Found: %s\n", fmt->name);
 	 }*/
 
-	int result = avformat_open_input(&pFormatCtx, url, NULL, NULL);
+    int testing = 1;
+    while (testing == 1) {
+
+    
+    int result = avformat_open_input(&pFormatCtx, url, NULL, NULL);
 	printf("Result: %d\n", result);
 	//if (avformat_open_input(&pFormatCtx, "video.h264", NULL, NULL) != 0) {
 	if (result != 0) {
@@ -252,9 +261,12 @@ void* processStream() {
 		return -1; // Couldn't open file
 	}
 
+    
 	printf("Get stream information\n");
 	// Retrieve stream information
-	if (avformat_find_stream_info(pFormatCtx, NULL) < 0)
+    int result2 = avformat_find_stream_info(pFormatCtx, NULL);
+    printf("Result: %d\n", result2);
+	if (result2 < 0)
 		return -1; // Couldn't find stream information
 
 	printf("Get stream information: Done\n");
@@ -300,10 +312,32 @@ void* processStream() {
 
 	// Allocate video frame
 	pFrame = av_frame_alloc();
-
+    
+    printf("Width: %d Height %d\n", pCodecCtx->width, pCodecCtx->height);
+        if (pCodecCtx->width != 0 && pCodecCtx->height != 0) {
+            testing = 0;
+        } else {
+            
+            
+            
+            
+            avformat_close_input(&pFormatCtx);
+            pFormatCtx = NULL;
+        }
+    }
+    // In some cases these values are both 0 so we set them manually
+    pCodecCtx->width = 640;
+    pCodecCtx->height = 480;
+    // In some cases pCodecCtx->pix_fmt is -1, should be 0
+    
 	// Allocate a place to put our YUV image on that screen
 	texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_YV12,
 			SDL_TEXTUREACCESS_STREAMING, pCodecCtx->width, pCodecCtx->height);
+//    while (!texture) {
+//        fprintf(stderr, "SDL: could not create texture - try again\n");
+//        texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_YV12,
+//                                    SDL_TEXTUREACCESS_STREAMING, pCodecCtx->width, pCodecCtx->height);
+//    }
 	if (!texture) {
 		fprintf(stderr, "SDL: could not create texture - exiting\n");
 		exit(1);
@@ -341,18 +375,23 @@ void* processStream() {
 	uvPitch = pCodecCtx->width / 2;
 	while (av_read_frame(pFormatCtx, &packet) >= 0) {
 
+        //printf("1 Received frame\n");
+        
 		//printf("%d\n", )
 		//startTimer();
 		// Is this a packet from the video stream?
 		if (packet.stream_index == videoStream) {
+            //printf("2 video\n");
 			// Decode video frame
 			//avcodec_decode_video2(pCodecCtx, pFrame, &frameFinished, &packet);
 			decode(pCodecCtx, pFrame, &frameFinished, &packet);
 
+            //printf("3 decoded\n");
 			//printf("Decoded frame: %d %d %d\n", pFrame->pts, packet.pos, packet.pts);
 
 			// Did we get a video frame?
 			if (frameFinished) {
+                //printf("4 finished\n");
 				AVPicture pict;
 				pict.data[0] = yPlane;
 				pict.data[1] = uPlane;
@@ -380,18 +419,21 @@ void* processStream() {
 
 		// Free the packet that was allocated by av_read_frame
 		av_packet_unref(&packet);
-		SDL_PollEvent(&event);
-		switch (event.type) {
-		case SDL_QUIT:
-			SDL_DestroyTexture(texture);
-			SDL_DestroyRenderer(renderer);
-			SDL_DestroyWindow(gWindow);
-			SDL_Quit();
-			exit(0);
-			break;
-		default:
-			break;
-		}
+//		SDL_PollEvent(&event);
+//		switch (event.type) {
+//                printf("Received event: %d\n");
+//            case SDL_QUIT:
+//                SDL_DestroyTexture(texture);
+//                SDL_DestroyRenderer(renderer);
+//                SDL_DestroyWindow(gWindow);
+//                SDL_Quit();
+//                exit(0);
+//                break;
+//            default:
+//                break;
+//		}
+        
+        //printf("x End of while\n");
 
 		//SDL_Delay(100);
 
@@ -448,7 +490,13 @@ void handleButtonClick(int x, int y) {
 		printf("Register for video\n");
 		//sendCommand("REGISTER");
 		//pthread_create(&processThread, NULL, processStream, NULL);
-		processStream();
+        
+        SDL_Thread *thread = SDL_CreateThread(processStream, "VideoThread", NULL);
+        if(thread == NULL) {
+            printf("Could not create thread\n");
+            return;
+        }
+		//processStream();
 		return;
 	}
 
@@ -593,11 +641,16 @@ int main(int argc, char* argv[]) {
 		SDL_Event e;
 
 		while (isRunning) {
-			// Handle events on queue
+            // Handle events on queue
 			//while (SDL_PollEvent(&e) != 0) {
 			if (SDL_WaitEvent(&e) != 0) {
 				//User requests quit
 				if (e.type == SDL_QUIT) {
+                    printf("Received quit event\n");
+                    SDL_DestroyTexture(texture);
+                    SDL_DestroyRenderer(renderer);
+                    SDL_DestroyWindow(gWindow);
+                    SDL_Quit();
 					isRunning = false;
 				}
 
@@ -612,6 +665,8 @@ int main(int argc, char* argv[]) {
 			// Update the surface
 			//SDL_UpdateWindowSurface(gWindow);
 		}
+        
+        printf("[main] Stopping\n");
 	}
 
 	// Free resources and close SDL
