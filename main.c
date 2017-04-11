@@ -220,7 +220,7 @@ void* processStream() {
 
     //char *url = "tcp://127.0.0.1:51234?overrun_nonfatal=1";
     // In case of packet loss (green frames, etc.) use &fifo_size=50000000
-    char *url = "udp://127.0.0.1:1234?overrun_nonfatal=1&fifo_size=50000000";
+    char *url = "udp://127.0.0.1:1234?overrun_nonfatal=1";
 	
 	//char* url = urlStream;
 	avformat_network_init();
@@ -375,18 +375,18 @@ void* processStream() {
 	uvPitch = pCodecCtx->width / 2;
 	while (av_read_frame(pFormatCtx, &packet) >= 0) {
 
-        //printf("1 Received frame\n");
+        printf("1 Received frame: %d\n", packet.stream_index);
         
 		//printf("%d\n", )
 		//startTimer();
 		// Is this a packet from the video stream?
 		if (packet.stream_index == videoStream) {
-            //printf("2 video\n");
+            printf("2 video\n");
 			// Decode video frame
 			//avcodec_decode_video2(pCodecCtx, pFrame, &frameFinished, &packet);
 			decode(pCodecCtx, pFrame, &frameFinished, &packet);
 
-            //printf("3 decoded\n");
+            printf("3 decoded\n");
 			//printf("Decoded frame: %d %d %d\n", pFrame->pts, packet.pos, packet.pts);
 
 			// Did we get a video frame?
@@ -433,7 +433,7 @@ void* processStream() {
 //                break;
 //		}
         
-        //printf("x End of while\n");
+        printf("x End of while\n");
 
 		//SDL_Delay(100);
 
