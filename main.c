@@ -11,6 +11,8 @@
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
 
+#include <time.h>
+
 // Increase:
 // analyzeduration
 // probesize
@@ -369,24 +371,36 @@ void* processStream() {
 		fprintf(stderr, "Could not allocate pixel buffers - exiting\n");
 		exit(1);
 	}
+    
+    int novideocount = 0;
 
 	// http://stackoverflow.com/questions/17546073/how-can-i-seek-to-frame-no-x-with-ffmpeg
 
 	uvPitch = pCodecCtx->width / 2;
 	while (av_read_frame(pFormatCtx, &packet) >= 0) {
 
-        printf("1 Received frame: %d\n", packet.stream_index);
+        //printf("1 Received frame: %d\n", packet.stream_index);
+
+        if (novideocount > 50) {
+            time_t rawtime;
+            struct tm * timeinfo;
+            time ( &rawtime );
+            timeinfo = localtime ( &rawtime );
+            printf ( "No video at: %s", asctime (timeinfo) );
+            novideocount = 0;
+        }
         
 		//printf("%d\n", )
 		//startTimer();
 		// Is this a packet from the video stream?
 		if (packet.stream_index == videoStream) {
-            printf("2 video\n");
+            novideocount = 0;
+            //printf("2 video\n");
 			// Decode video frame
 			//avcodec_decode_video2(pCodecCtx, pFrame, &frameFinished, &packet);
 			decode(pCodecCtx, pFrame, &frameFinished, &packet);
 
-            printf("3 decoded\n");
+            //printf("3 decoded\n");
 			//printf("Decoded frame: %d %d %d\n", pFrame->pts, packet.pos, packet.pts);
 
 			// Did we get a video frame?
@@ -415,7 +429,9 @@ void* processStream() {
 				showButton(btnStop);
 				SDL_RenderPresent(renderer);
 			}
-		}
+        } else {
+            novideocount++;
+        }
 
 		// Free the packet that was allocated by av_read_frame
 		av_packet_unref(&packet);
@@ -433,7 +449,7 @@ void* processStream() {
 //                break;
 //		}
         
-        printf("x End of while\n");
+        //printf("x End of while\n");
 
 		//SDL_Delay(100);
 
