@@ -11,6 +11,8 @@
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
 #include <libavutil/avstring.h>
+#include <libavutil/avutil.h>
+#include <libavutil/imgutils.h>
 
 #include <time.h>
 
@@ -778,7 +780,7 @@ int queue_picture(VideoState *is, AVFrame *pFrame) {
     
     VideoPicture *vp;
     int dst_pix_fmt;
-    AVPicture pict;
+    //AVPicture pict;
     
     /* wait until we have space for a new pic */
     SDL_LockMutex(is->pictq_mutex);
@@ -823,18 +825,42 @@ int queue_picture(VideoState *is, AVFrame *pFrame) {
         printf("YES, texture is set. display it\n");
         
         
-        AVPicture pict;
-        pict.data[0] = yPlane;
-        pict.data[1] = uPlane;
-        pict.data[2] = vPlane;
-        pict.linesize[0] = is->video_ctx->width;
-        pict.linesize[1] = uvPitch;
-        pict.linesize[2] = uvPitch;
+//        AVPicture pict;
+//        pict.data[0] = yPlane;
+//        pict.data[1] = uPlane;
+//        pict.data[2] = vPlane;
+//        pict.linesize[0] = is->video_ctx->width;
+//        pict.linesize[1] = uvPitch;
+//        pict.linesize[2] = uvPitch;
+        
+        // TODO: Memory leak
+        AVFrame* pFrameYUV = av_frame_alloc();
+        
+        int numBytes = av_image_get_buffer_size(
+                                          AV_PIX_FMT_YUV420P,//PIX_FMT_YUV420P,
+                                          is->video_ctx->width,
+                                          is->video_ctx->height, 16);
+        uint8_t* buffer = (uint8_t *)av_malloc( numBytes*sizeof(uint8_t) );
+        
+        av_image_fill_arrays (pFrameYUV->data, pFrameYUV->linesize, buffer, AV_PIX_FMT_YUV420P, is->video_ctx->width, is->video_ctx->height, 1);
+        
+        //avpicture_fill((AVPicture *)pFrameYUV, buffer, AV_PIX_FMT_YUV420P,//PIX_FMT_YUV420P,
+          //             is->video_ctx->width, is->video_ctx->height);
+        
+                pFrameYUV->data[0] = yPlane;
+                pFrameYUV->data[1] = uPlane;
+                pFrameYUV->data[2] = vPlane;
+                pFrameYUV->linesize[0] = is->video_ctx->width;
+                pFrameYUV->linesize[1] = uvPitch;
+                pFrameYUV->linesize[2] = uvPitch;
         
         // Convert the image into YUV format that SDL uses
         sws_scale(is->sws_ctx, (uint8_t const * const *) pFrame->data,
-                  pFrame->linesize, 0, is->video_ctx->height, pict.data,
-                  pict.linesize);
+                  pFrame->linesize, 0, is->video_ctx->height, pFrameYUV->data,
+                  pFrameYUV->linesize);
+        
+        av_frame_free(&pFrameYUV);
+        av_free(buffer);
         
         /* now we inform our display thread that we have a pic ready */
         if(++is->pictq_windex == VIDEO_PICTURE_QUEUE_SIZE) {
