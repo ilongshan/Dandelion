@@ -60,12 +60,10 @@ extern "C"
 #endif
 #endif
 
-#include <libavutil/samplefmt.h>
-
 #define MAX_AUDIO_FRAME_SIZE 192000 // 1 second of 48khz 32bit audio
 
-//Output PCM
-#define OUTPUT_PCM 1
+
+
 //Use SDL
 #define USE_SDL 1
 
@@ -81,6 +79,7 @@ static  Uint8  *audio_pos;
  * len: The length (in bytes) of the audio buffer
  */
 void  fill_audio(void *udata,Uint8 *stream,int len){
+    printf("Callback: %d. audio_len: %d\n", len, audio_len);
     //SDL 2.0
     SDL_memset(stream, 0, len);
     if(audio_len==0)		/*  Only  play  if  we  have  data  left  */
@@ -112,8 +111,7 @@ int main(int argc, char* argv[])
     struct SwrContext *au_convert_ctx;
     
     FILE *pFile=NULL;
-    //char url[]="aaa.mp4";
-    char *url = "udp://127.0.0.1:1234?overrun_nonfatal=1";
+    char url[]="sample.ts";
     
     av_register_all();
     avformat_network_init();
@@ -129,7 +127,7 @@ int main(int argc, char* argv[])
         return -1;
     }
     // Dump valid information onto standard error
-    av_dump_format(pFormatCtx, 0, url, false);
+    av_dump_format(pFormatCtx, 0, url, 0);
     
     // Find the first audio stream
     audioStream=-1;
@@ -160,11 +158,6 @@ int main(int argc, char* argv[])
         return -1;
     }
     
-    
-#if OUTPUT_PCM
-    pFile=fopen("output.pcm", "wb");
-#endif
-    
     packet=(AVPacket *)av_malloc(sizeof(AVPacket));
     av_init_packet(packet);
     
@@ -172,7 +165,8 @@ int main(int argc, char* argv[])
     uint64_t out_channel_layout=AV_CH_LAYOUT_STEREO;
     //nb_samples: AAC-1024 MP3-1152
     int out_nb_samples=pCodecCtx->frame_size;
-    AVSampleFormat out_sample_fmt=AV_SAMPLE_FMT_S16;
+    enum AVSampleFormat out_sample_fmt;
+    out_sample_fmt=AV_SAMPLE_FMT_S16;
     int out_sample_rate=44100;
     int out_channels=av_get_channel_layout_nb_channels(out_channel_layout);
     //Out Buffer Size
@@ -187,6 +181,10 @@ int main(int argc, char* argv[])
         printf( "Could not initialize SDL - %s\n", SDL_GetError());
         return -1;
     }
+    
+    printf("Sample rate: %d / %d\n", pCodecCtx->sample_rate, out_sample_rate);
+    printf("Channels: %d / %d\n", pCodecCtx->channels, out_channels);
+    printf("Samples: %d\n", out_nb_samples);
     //SDL_AudioSpec
     wanted_spec.freq = out_sample_rate;
     wanted_spec.format = AUDIO_S16SYS;
@@ -224,11 +222,6 @@ int main(int argc, char* argv[])
                 printf("index:%5d\t pts:%lld\t packet size:%d\n",index,packet->pts,packet->size);
 #endif
                 
-                
-#if OUTPUT_PCM
-                //Write PCM
-                fwrite(out_buffer, 1, out_buffer_size, pFile);
-#endif
                 index++;
             }
             
@@ -256,9 +249,7 @@ int main(int argc, char* argv[])
     SDL_Quit();
 #endif
     // Close file
-#if OUTPUT_PCM
-    fclose(pFile);
-#endif
+
     av_free(out_buffer);
     // Close the codec
     avcodec_close(pCodecCtx);
