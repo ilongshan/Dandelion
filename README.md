@@ -9,7 +9,7 @@ A secure video chat application
 brew install yasm
 ```
 
-### libx264
+### libx264 (video)
 ```
 1. git clone http://git.videolan.org/git/x264.git x264
 2. ./configure --prefix=/usr/local --enable-shared
@@ -17,10 +17,22 @@ brew install yasm
 4. sudo make install
 ```
 
+### libopus (audio)
+
+```
+1. brew install automake
+2. git clone git://git.opus-codec.org/opus.git
+3. cd opus
+4. ./autogen.sh
+5. ./configure --enable-static --enable-shared
+6. make
+7. sudo make install
+```
+
 ### ffmpeg
 ```
 1. git clone https://git.ffmpeg.org/ffmpeg.git ffmpeg
-2. ./configure  --prefix=/usr/local --enable-gpl --enable-nonfree --enable-libfreetype --enable-libx264
+2. ./configure  --prefix=/usr/local --enable-gpl --enable-nonfree --enable-libfreetype --enable-libx264 --enable-libopus
 3. make
 4. sudo make install
 ```
