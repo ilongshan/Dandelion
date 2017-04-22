@@ -86,7 +86,8 @@ void  fill_audio(void *udata,Uint8 *stream,int len){
         return;
     len=(len>audio_len?audio_len:len);	/*  Mix  as  much  data  as  possible  */
     
-    SDL_MixAudio(stream,audio_pos,len,SDL_MIX_MAXVOLUME);
+    SDL_memcpy (stream, audio_pos, len);
+    //SDL_MixAudio(stream,audio_pos,len,SDL_MIX_MAXVOLUME);
     audio_pos += len;
     audio_len -= len;
 }
@@ -112,6 +113,7 @@ int main(int argc, char* argv[])
     
     FILE *pFile=NULL;
     char url[]="sample.ts";
+    //char url[]="udp://127.0.0.1:1234";
     
     av_register_all();
     avformat_network_init();
@@ -208,6 +210,8 @@ int main(int argc, char* argv[])
     au_convert_ctx=swr_alloc_set_opts(au_convert_ctx,out_channel_layout, out_sample_fmt, out_sample_rate,
                                       in_channel_layout,pCodecCtx->sample_fmt , pCodecCtx->sample_rate,0, NULL);
     swr_init(au_convert_ctx);
+    
+    avformat_flush(pFormatCtx);
     
     while(av_read_frame(pFormatCtx, packet)>=0){
         if(packet->stream_index==audioStream){
