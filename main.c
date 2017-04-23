@@ -44,7 +44,7 @@
 #define VIDEO_PICTURE_QUEUE_SIZE 1
 #define MAX_VIDEOQ_SIZE (5 * 256 * 1024)
 
-#define SDL_AUDIO_BUFFER_SIZE 1024
+//#define SDL_AUDIO_BUFFER_SIZE 1024
 #define AVCODEC_MAX_AUDIO_FRAME_SIZE 192000
 #define MAX_AUDIO_FRAME_SIZE 192000
 
@@ -74,8 +74,8 @@ typedef struct VideoState {
     AVCodecContext  *audio_ctx;
     PacketQueue     audioq;
     uint8_t         audio_buf[(AVCODEC_MAX_AUDIO_FRAME_SIZE * 3) / 2];
-    unsigned int    audio_buf_size;
-    unsigned int    audio_buf_index;
+    //unsigned int    audio_buf_size;
+    //unsigned int    audio_buf_index;
     AVFrame         audio_frame;
     AVPacket        audio_pkt;
     uint8_t         *audio_pkt_data;
@@ -465,19 +465,24 @@ int stream_component_open(VideoState *is, int stream_index) {
     
     
     if(codecCtx->codec_type == AVMEDIA_TYPE_AUDIO) {
-        // Set audio settings from codec info
-        wanted_spec.freq = codecCtx->sample_rate;
+        // We want:
+        // * Stereo output (= 2 channels)
+        uint64_t out_channel_layout = AV_CH_LAYOUT_STEREO;
+        int out_channels=av_get_channel_layout_nb_channels(out_channel_layout);
+        // * Samples: AAC-1024 MP3-1152
+        int out_nb_samples=codecCtx->frame_size;
+        wanted_spec.freq = 44100;
         wanted_spec.format = AUDIO_S16SYS;
-        wanted_spec.channels = codecCtx->channels;
+        wanted_spec.channels = out_channels;
         wanted_spec.silence = 0;
-        wanted_spec.samples = SDL_AUDIO_BUFFER_SIZE;
+        wanted_spec.samples = out_nb_samples;
         wanted_spec.callback = audio_callback;
         wanted_spec.userdata = is;
         
-//        if(SDL_OpenAudio(&wanted_spec, &spec) < 0) {
-//            fprintf(stderr, "SDL_OpenAudio: %s\n", SDL_GetError());
-//            return -1;
-//        }
+        if(SDL_OpenAudio(&wanted_spec, &spec) < 0) {
+            fprintf(stderr, "SDL_OpenAudio: %s\n", SDL_GetError());
+            return -1;
+        }
     }
     if(avcodec_open2(codecCtx, codec, NULL) < 0) {
         fprintf(stderr, "Unsupported codec!\n");
@@ -489,11 +494,11 @@ int stream_component_open(VideoState *is, int stream_index) {
             is->audioStream = stream_index;
             is->audio_st = pFormatCtx->streams[stream_index];
             is->audio_ctx = codecCtx;
-            is->audio_buf_size = 0;
-            is->audio_buf_index = 0;
+            //is->audio_buf_size = 0;
+            //is->audio_buf_index = 0;
             memset(&is->audio_pkt, 0, sizeof(is->audio_pkt));
             packet_queue_init(&is->audioq);
-            //SDL_PauseAudio(0);
+            SDL_PauseAudio(0);
             printf("Openend audio\n");
             break;
         case AVMEDIA_TYPE_VIDEO:
@@ -597,68 +602,8 @@ int decode_thread(void *arg) {
         }
         
         stream_component_open(is, video_index);
-        //stream_component_open(is, audio_index);
+        stream_component_open(is, audio_index);
         
-//        AVCodecParameters *pCodecParams = pFormatCtx->streams[video_index]->codecpar;
-//        //pCodecCtxOrig = pFormatCtx->streams[video_index]->codec;
-//        // Find the decoder for the video stream
-//        //pCodec = avcodec_find_decoder(pCodecCtxOrig->codec_id);
-//        pCodec = avcodec_find_decoder(pCodecParams->codec_id);
-//        if (pCodec == NULL) {
-//            fprintf(stderr, "[decode_thread] Error: Codec with id %d not found.\n", pCodecParams->codec_id);
-//            return -1;
-//        }
-//        printf("[decode_thread] Found the codec.\n");
-//
-//        // Copy context
-//        pCodecCtx = avcodec_alloc_context3(pCodec);
-//        result = avcodec_parameters_to_context(pCodecCtx, pCodecParams);
-//        if (result < 0) {
-//            printf("[decode_thread] Failed to copy decoder parameters to input decoder context\n");
-//            return -1;
-//        }
-//        printf("[decode_thread] Copied the decoder.\n");
-//        // Open codec
-//        if (avcodec_open2(pCodecCtx, pCodec, NULL) < 0) {
-//            fprintf(stderr, "[decode_thread] Error: Can't open codec.\n");
-//            return -1; // Could not open codec
-//        }
-//        printf("[decode_thread] Opened the decoder.\n");
-//        if (pCodecCtx->width != 0 && pCodecCtx->height != 0) {
-//            printf("[decode_thread] Success: Found codec information. Width: %d, Height %d.\n", pCodecCtx->width, pCodecCtx->height);
-//            testing = 0;
-//        } else {
-//            printf("[decode_thread] Warning: Some codec information is not set. Try again.\n");
-//            avformat_close_input(&pFormatCtx);
-//            pFormatCtx = NULL;
-//            continue;
-//        }
-//        is->videoStream = video_index;
-//        is->video_st = pFormatCtx->streams[video_index];
-//        is->video_ctx = pCodecCtx;
-//        packet_queue_init(&is->videoq);
-//        is->video_tid = SDL_CreateThread(video_thread, "video_thread", is);
-//        is->sws_ctx = sws_getContext(is->video_ctx->width, is->video_ctx->height,
-//                                     is->video_ctx->pix_fmt, is->video_ctx->width,
-//                                     is->video_ctx->height, AV_PIX_FMT_YUV420P,
-//                                     SWS_BILINEAR, NULL, NULL, NULL
-//                                     );
-//        is->texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_YV12,
-//                                        SDL_TEXTUREACCESS_STREAMING, is->video_ctx->width, is->video_ctx->height);
-//        uvPitch = is->video_ctx->width / 2;
-//        
-//        // set up YV12 pixel array (12 bits per pixel)
-//        yPlaneSz = is->video_ctx->width * is->video_ctx->height;
-//        uvPlaneSz = is->video_ctx->width * is->video_ctx->height / 4;
-//        yPlane = (Uint8*) malloc(yPlaneSz);
-//        uPlane = (Uint8*) malloc(uvPlaneSz);
-//        vPlane = (Uint8*) malloc(uvPlaneSz);
-//        if (!yPlane || !uPlane || !vPlane) {
-//            fprintf(stderr, "Could not allocate pixel buffers - exiting\n");
-//            exit(1);
-//        }
-        
-
         // Get a pointer to the codec context for the audio stream
         pCodecCtx=pFormatCtx->streams[audio_index]->codec;
         
@@ -702,28 +647,30 @@ int decode_thread(void *arg) {
         printf("Channels: %d / %d\n", pCodecCtx->channels, out_channels);
         printf("Samples: %d\n", out_nb_samples);
         //SDL_AudioSpec
-        wanted_spec.freq = out_sample_rate;
-        wanted_spec.format = AUDIO_S16SYS;
-        wanted_spec.channels = out_channels;
-        wanted_spec.silence = 0;
-        wanted_spec.samples = out_nb_samples;
-        wanted_spec.callback = audio_callback;
-        wanted_spec.userdata = pCodecCtx;
+//        wanted_spec.freq = out_sample_rate;
+//        wanted_spec.format = AUDIO_S16SYS;
+//        wanted_spec.channels = out_channels;
+//        wanted_spec.silence = 0;
+//        wanted_spec.samples = out_nb_samples;
+//        wanted_spec.callback = audio_callback;
+//        wanted_spec.userdata = pCodecCtx;
+//        
+//        if (SDL_OpenAudio(&wanted_spec, NULL)<0){
+//            printf("can't open audio.\n");
+//            return -1;
+//        }
         
-        if (SDL_OpenAudio(&wanted_spec, NULL)<0){
-            printf("can't open audio.\n");
-            return -1;
-        }
-        
-        SDL_PauseAudio(0);
+//        SDL_PauseAudio(0);
         printf("Samples1\n");
         //FIX:Some Codec's Context Information is missing
         in_channel_layout=av_get_default_channel_layout(pCodecCtx->channels);
         //Swr
         printf("Samples12\n");
         au_convert_ctx = swr_alloc();
-        au_convert_ctx=swr_alloc_set_opts(au_convert_ctx,out_channel_layout, out_sample_fmt, out_sample_rate,
-                                          in_channel_layout,pCodecCtx->sample_fmt , pCodecCtx->sample_rate,0, NULL);
+        au_convert_ctx = swr_alloc_set_opts(au_convert_ctx,
+                                          out_channel_layout, out_sample_fmt,        out_sample_rate,
+                                          in_channel_layout,  pCodecCtx->sample_fmt, pCodecCtx->sample_rate,
+                                          0, NULL);
         printf("Samples13\n");
         swr_init(au_convert_ctx);
         printf("Samples14\n");
