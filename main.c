@@ -330,24 +330,60 @@ void audio_callback(void *userdata, Uint8 *stream, int len) {
 //    }
 //    
 //    printf("<--- Callback done: %d\n", len);
+
     
     
     
-    
-    printf("Callback called: %d\n", len);
+    printf("---> Callback called: %d\n", len);
     
     //SDL 2.0
     SDL_memset(stream, 0, len);
     
-    if (audio_len ==0)
+    VideoState *is = (VideoState *)userdata;
+    int got_frame = 0;
+    AVPacket *packet = &is->audio_pkt;
+    //AVFrame *pFrame = &is->audio_frame;
+    
+    printf("[audio_decode_frame] Get next packet\n");
+    int ret = packet_queue_get(&is->audioq, packet, 1);
+    printf("[audio_decode_frame] Get next packet -\n");
+    if(ret < 0) {
+        printf("Error.\n");
         return;
+    }
     
-    len = ( len > audio_len ? audio_len : len );
-    //SDL_memcpy (stream, audio_pos, len); 					// simply copy from one buffer into the other
-    SDL_MixAudio(stream, audio_pos, len, SDL_MIX_MAXVOLUME);// mix from one buffer into another
+    ret = avcodec_decode_audio4( is->audio_ctx, &is->audio_frame, &got_frame, packet);
+    if ( ret < 0 ) {
+        printf("Error in decoding audio frame.\n");
+        return;
+    }
     
-    audio_pos += len;
-    audio_len -= len;
+    uint8_t *audio_buf = is->audio_buf;
+    if (got_frame > 0) {
+        AVFrame *pFrame = &is->audio_frame;
+        ret = swr_convert(au_convert_ctx, &audio_buf,MAX_AUDIO_FRAME_SIZE, (const uint8_t **)pFrame->data, pFrame->nb_samples);
+        printf("index:%5d\t pts:%d / %d\n",packet->pts,packet->size, ret);
+    }
+    SDL_MixAudio(stream, (uint8_t *)is->audio_buf, len, SDL_MIX_MAXVOLUME);
+    printf("<--- Callback done: %d\n", len);
+    
+    
+    
+    
+//    printf("Callback called: %d\n", len);
+//
+//    //SDL 2.0
+//    SDL_memset(stream, 0, len);
+//    
+//    if (audio_len ==0)
+//        return;
+//    
+//    len = ( len > audio_len ? audio_len : len );
+//    //SDL_memcpy (stream, audio_pos, len); 					// simply copy from one buffer into the other
+//    SDL_MixAudio(stream, audio_pos, len, SDL_MIX_MAXVOLUME);// mix from one buffer into another
+//    
+//    audio_pos += len;
+//    audio_len -= len;
 }
 
 bool initSDL() {
@@ -832,34 +868,34 @@ int decode_thread(void *arg) {
             } else if(packet->stream_index == audio_index) {
                 printf("Audio...\n");
 
-                //packet_queue_put(&is->audioq, packet);
+                packet_queue_put(&is->audioq, packet);
                 
                 
-                int ret = avcodec_decode_audio4( pCodecCtx, pFrame,&got_picture, packet);
-                if ( ret < 0 ) {
-                    printf("Error in decoding audio frame.\n");
-                    return -1;
-                }
-                if ( got_picture > 0 ){
-                    swr_convert(au_convert_ctx,&out_buffer, MAX_AUDIO_FRAME_SIZE,(const uint8_t **)pFrame->data , pFrame->nb_samples);
-#if 1
-                    printf("index:%5d\t pts:%lld\t packet size:%d\n",index,packet->pts,packet->size);
-#endif
-                    
-                    index++;
-                }
-                
-                
-                    
-
-                while(audio_len>0)//Wait until finish
-                    SDL_Delay(1);
-                
-                //Set audio buffer (PCM data)
-                audio_chunk = (Uint8 *) out_buffer;
-                //Audio buffer length
-                audio_len =out_buffer_size;
-                audio_pos = audio_chunk;
+//                int ret = avcodec_decode_audio4( pCodecCtx, pFrame,&got_picture, packet);
+//                if ( ret < 0 ) {
+//                    printf("Error in decoding audio frame.\n");
+//                    return -1;
+//                }
+//                if ( got_picture > 0 ){
+//                    swr_convert(au_convert_ctx,&out_buffer, MAX_AUDIO_FRAME_SIZE,(const uint8_t **)pFrame->data , pFrame->nb_samples);
+//#if 1
+//                    printf("index:%5d\t pts:%lld\t packet size:%d\n",index,packet->pts,packet->size);
+//#endif
+//                    
+//                    index++;
+//                }
+//                
+//                
+//                    
+//
+//                while(audio_len>0)//Wait until finish
+//                    SDL_Delay(1);
+//                
+//                //Set audio buffer (PCM data)
+//                audio_chunk = (Uint8 *) out_buffer;
+//                //Audio buffer length
+//                audio_len =out_buffer_size;
+//                audio_pos = audio_chunk;
                 
             } else {
                 av_packet_unref(packet);
