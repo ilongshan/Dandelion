@@ -140,7 +140,9 @@ void packet_queue_init(PacketQueue *q) {
     q->cond = SDL_CreateCond();
 }
 int packet_queue_put(PacketQueue *q, AVPacket *pkt) {
-    printf("[packet_queue_put] Add new packet\n");
+    
+    pthread_t ptid = pthread_self();
+    printf("[packet_queue_put] Queue: %p / Thread: %d\n", q, ptid);
     
     AVPacketList *pkt1;
     // TODO: use AVPacket tmp_pkt = {0}; instead
@@ -174,6 +176,7 @@ int packet_queue_put(PacketQueue *q, AVPacket *pkt) {
 //        return 0;
 //    }
 
+    printf("[packet_queue_put] Packet at: %p\n", pkt1);
     
     printf("[packet_queue_put] Queue size: %d / %d. Signal waiter.\n", q->nb_packets, q->size);
     SDL_CondSignal(q->cond);
@@ -183,11 +186,18 @@ int packet_queue_put(PacketQueue *q, AVPacket *pkt) {
     return 0;
 }
 static int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block) {
-    printf("[packet_queue_get]\n");
+    pthread_t ptid = pthread_self();
+    
+    printf("[packet_queue_get] Queue: %p / Thread: %d\n", q, ptid);
+    
+    
+    
     AVPacketList *pkt1 = NULL;
     int ret = 0;
     
+    printf("[packet_queue_get] Before lock\n");
     SDL_LockMutex(q->mutex);
+    printf("[packet_queue_get] After lock\n");
     
     while(true) {
         
@@ -198,6 +208,7 @@ static int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block) {
         }
         
         pkt1 = q->first_pkt;
+        printf("[packet_queue_get] pkt1 at: %p\n", pkt1);
         if (pkt1) {
             //printf("[packet_queue_get] 1\n");
             q->first_pkt = pkt1->next;
@@ -206,6 +217,7 @@ static int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block) {
             q->nb_packets--;
             q->size -= pkt1->pkt.size;
             *pkt = pkt1->pkt;
+            printf("[packet_queue_get] Queue: %p / Thread: %d, Got packet at: %p\n", q,ptid, pkt);
             av_free(pkt1);
             ret = 1;
             break;
@@ -219,6 +231,7 @@ static int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block) {
             printf("[packet_queue_get] UNBLOCK\n");
         }
     }
+    printf("[packet_queue_get] Before unlock\n");
     SDL_UnlockMutex(q->mutex);
     printf("[packet_queue_get] End.\n");
     return ret;
@@ -289,11 +302,14 @@ int audio_decode_frame(VideoState *is, uint8_t *audio_buf, int buf_size) {
 
 void audio_callback(void *userdata, Uint8 *stream, int len) {
     
+    pthread_t ptid = pthread_self();
+    printf("Thread: %d\n", ptid);
+    
 //    printf("---> Callback called: %d\n", len);
 //    
-//    //SDL 2.0
-//    SDL_memset(stream, 0, len);
-//    
+    //SDL 2.0
+    //SDL_memset(stream, 0, len);
+//
 //    VideoState *is = (VideoState *)userdata;
 //    int len1, audio_size;
 //    
@@ -345,10 +361,14 @@ void audio_callback(void *userdata, Uint8 *stream, int len) {
     //AVFrame *pFrame = &is->audio_frame;
     
     printf("[audio_decode_frame] Get next packet\n");
-    int ret = packet_queue_get(&is->audioq, packet, 1);
+    int ret = packet_queue_get(&is->audioq, packet, 0);
     printf("[audio_decode_frame] Get next packet -\n");
     if(ret < 0) {
         printf("Error.\n");
+        return;
+    }
+    if (ret == 0) {
+        printf("[audio_decode_frame] Ignore packet.\n");
         return;
     }
     
@@ -365,6 +385,7 @@ void audio_callback(void *userdata, Uint8 *stream, int len) {
         printf("index:%5d\t pts:%d / %d\n",packet->pts,packet->size, ret);
     }
     SDL_MixAudio(stream, (uint8_t *)is->audio_buf, len, SDL_MIX_MAXVOLUME);
+    //SDL_Delay(10);
     printf("<--- Callback done: %d\n", len);
     
     
@@ -665,6 +686,7 @@ int stream_component_open(VideoState *is, int stream_index) {
             is->video_st = pFormatCtx->streams[stream_index];
             is->video_ctx = codecCtx;
             packet_queue_init(&is->videoq);
+            // TODO: Do not forget to enable
             is->video_tid = SDL_CreateThread(video_thread, "video_thread", is);
             is->sws_ctx = sws_getContext(is->video_ctx->width, is->video_ctx->height,
                                          is->video_ctx->pix_fmt, is->video_ctx->width,
@@ -840,6 +862,8 @@ int decode_thread(void *arg) {
         
         avformat_flush(is->pFormatCtx);
         
+        int c = 0;
+        
         /*
          * stream_component_open() end
          */
@@ -864,11 +888,28 @@ int decode_thread(void *arg) {
             }
             // Is this a packet from the video stream?
             if(packet->stream_index == is->videoStream) {
-                //packet_queue_put(&is->videoq, packet);
+                packet_queue_put(&is->videoq, packet);
             } else if(packet->stream_index == audio_index) {
-                printf("Audio...\n");
+                printf("Audio...: %d - %d\n", c, is->audioq.nb_packets);
 
                 packet_queue_put(&is->audioq, packet);
+
+                
+//                if (is->audioq.nb_packets > 4) {
+//                    
+//                } else {
+//                    packet_queue_put(&is->audioq, packet);
+//                }
+                
+                c++;
+                //packet_queue_put(&is->audioq, packet);
+//                if (c > 120 && c < 200) {
+//                    
+//                } else {
+//                    packet_queue_put(&is->audioq, packet);
+//                }
+                
+                
                 
                 
 //                int ret = avcodec_decode_audio4( pCodecCtx, pFrame,&got_picture, packet);
