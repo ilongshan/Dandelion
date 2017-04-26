@@ -112,8 +112,8 @@ int main(int argc, char* argv[])
     struct SwrContext *au_convert_ctx;
     
     FILE *pFile=NULL;
-    char url[]="sample.ts";
-    //char url[]="udp://127.0.0.1:1234";
+    //char url[]="sample.ts";
+    char url[]="udp://127.0.0.1:1234";
     
     av_register_all();
     avformat_network_init();
@@ -241,6 +241,10 @@ int main(int argc, char* argv[])
             
             //Play
             SDL_PauseAudio(0);
+            
+            if (index > 200) {
+                break;
+            }
 #endif
         }
         av_free_packet(packet);
