@@ -149,8 +149,8 @@ static void add_stream(OutputStream *ost, AVFormatContext *oc,
 
         c->bit_rate = 400000;
         /* Resolution must be a multiple of two. */
-        c->width    = 352;
-        c->height   = 288;
+        c->width    = 640;
+        c->height   = 480;
         /* timebase: This is the fundamental unit of time (in seconds) in terms
          * of which frame timestamps are represented. For fixed-fps content,
          * timebase should be 1/framerate and timestamp increments should be
@@ -586,10 +586,12 @@ int main(int argc, char **argv)
     }
 
     /* allocate the output media context */
-    avformat_alloc_output_context2(&oc, NULL, NULL, filename);
+    avformat_alloc_output_context2(&oc, NULL, "mpegts", filename);
     if (!oc) {
         printf("Could not deduce output format from file extension: using MPEG.\n");
         avformat_alloc_output_context2(&oc, NULL, "mpeg", filename);
+    } else {
+        printf("Use mpegts\n");
     }
     if (!oc)
         return 1;
@@ -599,7 +601,9 @@ int main(int argc, char **argv)
     /* Add the audio and video streams using the default format codecs
      * and initialize the codecs. */
     if (fmt->video_codec != AV_CODEC_ID_NONE) {
-        add_stream(&video_st, oc, &video_codec, fmt->video_codec);
+        //add_stream(&video_st, oc, &video_codec, fmt->video_codec);
+        add_stream(&video_st, oc, &video_codec, AV_CODEC_ID_H264);
+        
         have_video = 1;
         encode_video = 1;
     }
