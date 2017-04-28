@@ -375,6 +375,7 @@ void audio_callback(void *userdata, Uint8 *stream, int len) {
     ret = avcodec_decode_audio4( is->audio_ctx, &is->audio_frame, &got_frame, packet);
     if ( ret < 0 ) {
         printf("Error in decoding audio frame.\n");
+        av_packet_unref(packet);
         return;
     }
     
@@ -386,6 +387,7 @@ void audio_callback(void *userdata, Uint8 *stream, int len) {
     }
     SDL_MixAudio(stream, (uint8_t *)is->audio_buf, len, SDL_MIX_MAXVOLUME);
     //SDL_Delay(10);
+    av_packet_unref(packet);
     printf("<--- Callback done: %d\n", len);
     
     
@@ -891,7 +893,6 @@ int decode_thread(void *arg) {
                 packet_queue_put(&is->videoq, packet);
             } else if(packet->stream_index == audio_index) {
                 printf("Audio...: %d - %d\n", c, is->audioq.nb_packets);
-
                 packet_queue_put(&is->audioq, packet);
 
                 
