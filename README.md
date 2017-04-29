@@ -70,3 +70,10 @@ TCP
 ```
 ffmpeg -s 640x480 -r 30 -f avfoundation -i "0:0" -c:v libx264 -tune zerolatency -pix_fmt yuv420p -c:a aac -b:a 128k -f mpegts pipe:1 | nc -l -k 51234
 ```
+
+## Commands
+
+List all devices (video and audio)
+```
+ffmpeg -f avfoundation -list_devices true -i ""
+```
