@@ -488,6 +488,11 @@ static void pgm_save(unsigned char *buf, int wrap, int xsize, int ysize,
 }
 int frame = 0;
 
+static int static_pts = 0;
+int nextPTS()
+{
+    return static_pts ++;
+}
 
 static AVFrame *get_video_frame(OutputStream *ost)
 {
@@ -587,14 +592,30 @@ static AVFrame *get_video_frame(OutputStream *ost)
             
 //            newpicture->pts = av_frame_get_best_effort_timestamp(newpicture);
             
-            int pts = av_rescale_q(c->coded_frame->pts, c->time_base, ost->st->time_base);
-            printf("Calculated: %d\n");
+            //int pts = av_rescale_q(c->coded_frame->pts, c->time_base, ost->st->time_base);
+            //printf("Calculated: %d\n");
             
+            int pts = 0;
+            
+            if(camPacket.dts != AV_NOPTS_VALUE) {
+                pts = av_frame_get_best_effort_timestamp(pCamFrame);
+                printf("Is not NOPTS: %d\n", pts);
+            } else {
+                printf("Is NOPTS\n");
+                pts = 0;
+            }
+            pts *= av_q2d(c->time_base);
+            printf("PTS new: %d\n", pts);
+            
+            
+            //newpicture->pts = av_rescale_q(nextPTS(), (AVRational){1, c->sample_rate}, c->time_base);
+            //printf("---> %d, Samples: %d\n", newpicture->pts, nextPTS());
             
             ost->frame = newpicture;
-            ost->next_pts = ost->next_pts + 2350;
-            //ost->next_pts = ost->next_pts + 1;
-            ost->frame->pts = ost->next_pts;
+            //ost->next_pts = ost->next_pts + 2350;
+            //ost->next_pts = (1.0 / 30) * 90 * nextPTS();
+            //ost->frame->pts = ost->next_pts;
+            ost->frame->pts = pts;
             
             printf("We got it: %p and: %d %d PTS: %d\n", newpicture, pCamFrame->linesize[0], newpicture->linesize[0], ost->frame->pts);
 
