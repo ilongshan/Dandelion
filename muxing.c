@@ -548,53 +548,6 @@ static AVFrame *get_video_frame(OutputStream *ost)
                         newpicture->width =c->width;
                         newpicture->format = c->pix_fmt;
             
-            
-            
-//            int got_packet_ptr = 0;
-//            AVPacket newpkt;
-//            av_init_packet(&newpkt);
-//            int r = avcodec_encode_video2(c, &newpkt, newpicture, &got_packet_ptr);
-//            printf("Error: %d and %d\n", r, got_packet_ptr);
-//
-//            AVFrame* frame2 = av_frame_alloc();
-//            int num_bytes = avpicture_get_size(AV_PIX_FMT_YUV420P, 640, 480);
-//            uint8_t* frame2_buffer = (uint8_t *)av_malloc(num_bytes*sizeof(uint8_t));
-//            avpicture_fill((AVPicture*)frame2, frame2_buffer, AV_PIX_FMT_YUV420P, 640, 480);
-//            
-//            printf("Linesize: %d / %d\n", pCamFrame->linesize[0], pCamFrame->pts);
-//            
-//            sws_scale(pCamSwsContext, pCamFrame->data, pCamFrame->linesize, 0, 480, ost->frame->data, ost->frame->linesize);
-//            
-//            ost->frame->pts = ost->next_pts++;
-//            printf("asdsadas\n");
-//            return ost->frame;
-            
-//            AVFrame *bkf = av_frame_alloc();
-//            av_frame_copy(bkf, pCamFrame);
-//            bkf->height =pCamFrame->height;
-//            bkf->width =pCamFrame->width;
-//            bkf->format = pCamFrame->format;
-//            printf("Do it: %d\n", pCamFrame->linesize[0]);
-            
-            //printf("DTATATA: %p / %p\n", pCamFrame, pCamFrame->data);
-            
-            //sws_scale(pCamSwsContext, pCamFrame->data, pCamFrame->linesize, 0, 480, ost->frame->data, ost->frame->linesize);
-//
-//            
-            //ret = av_image_alloc(frame2->data, frame2->linesize, pCamCodecCtx->width, pCamCodecCtx->height, pCamCodecCtx->pix_fmt, 1);
-            //bkf->linesize = pCamFrame->linesize;
-            
-//            printf("Frame is finished\n", pCamFrame);
-//            fflush(stdout);
-//            snprintf(buf, sizeof(buf), "test%d.pgm", frame);
-//            pgm_save(pCamFrame->data[0], pCamFrame->linesize[0], pCamCodecCtx->width, pCamCodecCtx->height, buf);
-//            frame++;
-            
-//            newpicture->pts = av_frame_get_best_effort_timestamp(newpicture);
-            
-            //int pts = av_rescale_q(c->coded_frame->pts, c->time_base, ost->st->time_base);
-            //printf("Calculated: %d\n");
-            
             int pts = 0;
             
             if(camPacket.dts != AV_NOPTS_VALUE) {
@@ -607,6 +560,7 @@ static AVFrame *get_video_frame(OutputStream *ost)
             pts *= av_q2d(c->time_base);
             printf("PTS new: %d\n", pts);
             
+            nextPTS();
             
             //newpicture->pts = av_rescale_q(nextPTS(), (AVRational){1, c->sample_rate}, c->time_base);
             //printf("---> %d, Samples: %d\n", newpicture->pts, nextPTS());
@@ -625,33 +579,30 @@ static AVFrame *get_video_frame(OutputStream *ost)
     }
 
     
-    if (c->pix_fmt != AV_PIX_FMT_YUV420P) {
-        /* as we only generate a YUV420P picture, we must convert it
-         * to the codec pixel format if needed */
-        if (!ost->sws_ctx) {
-            ost->sws_ctx = sws_getContext(c->width, c->height,
-                                          AV_PIX_FMT_YUV420P,
-                                          c->width, c->height,
-                                          c->pix_fmt,
-                                          SCALE_FLAGS, NULL, NULL, NULL);
-            if (!ost->sws_ctx) {
-                fprintf(stderr,
-                        "Could not initialize the conversion context\n");
-                exit(1);
-            }
-        }
-        printf("NOK\n");
-        fill_yuv_image(ost->tmp_frame, ost->next_pts, c->width, c->height);
-        sws_scale(ost->sws_ctx,
-                  (const uint8_t * const *)ost->tmp_frame->data, ost->tmp_frame->linesize,
-                  0, c->height, ost->frame->data, ost->frame->linesize);
-    } else {
-        printf("OK\n");
-        
-        fill_yuv_image(ost->frame, ost->next_pts, c->width, c->height);
-    }
-
-    ost->frame->pts = ost->next_pts++;
+//    if (c->pix_fmt != AV_PIX_FMT_YUV420P) {
+//        /* as we only generate a YUV420P picture, we must convert it
+//         * to the codec pixel format if needed */
+//        if (!ost->sws_ctx) {
+//            ost->sws_ctx = sws_getContext(c->width, c->height,
+//                                          AV_PIX_FMT_YUV420P,
+//                                          c->width, c->height,
+//                                          c->pix_fmt,
+//                                          SCALE_FLAGS, NULL, NULL, NULL);
+//            if (!ost->sws_ctx) {
+//                fprintf(stderr,
+//                        "Could not initialize the conversion context\n");
+//                exit(1);
+//            }
+//        }
+//        fill_yuv_image(ost->tmp_frame, ost->next_pts, c->width, c->height);
+//        sws_scale(ost->sws_ctx,
+//                  (const uint8_t * const *)ost->tmp_frame->data, ost->tmp_frame->linesize,
+//                  0, c->height, ost->frame->data, ost->frame->linesize);
+//    } else {
+//        fill_yuv_image(ost->frame, ost->next_pts, c->width, c->height);
+//    }
+//
+//    ost->frame->pts = ost->next_pts++;
 
     return ost->frame;
 }
@@ -675,14 +626,10 @@ static int write_video_frame(AVFormatContext *oc, OutputStream *ost)
     /* encode the image */
     ret = avcodec_encode_video2(c, &pkt, frame, &got_packet);
     
-    printf("CALCED: %d\n", c->coded_frame->pts);
-    
     if (ret < 0) {
         fprintf(stderr, "Error encoding video frame: %s\n", av_err2str(ret));
         exit(1);
     }
-
-    printf("Go packet %d %p\n", got_packet, frame);
     
     if (got_packet) {
         ret = write_frame(oc, &c->time_base, ost->st, &pkt);
@@ -844,20 +791,32 @@ int main(int argc, char **argv)
     
 
     while (encode_video || encode_audio) {
-        printf("Encode it: %d\n", encode_video);
-                if (encode_video) {
-                    encode_video = !write_video_frame(oc, &video_st);
-                    printf("Encode it2: %d\n", encode_video);
-                } else if (encode_audio) {
-                    encode_audio = !write_audio_frame(oc, &audio_st);
-                }
+        
+//        encode_video = !write_video_frame(oc, &video_st);
+//        encode_audio = !write_audio_frame(oc, &audio_st);
+        
+//        printf("Encode it: %d\n", encode_video);
+        
+        //int cp = av_compare_ts(video_st.next_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base);
+        int cp = av_compare_ts(static_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base);
+        printf("Compare: %d. V1: %d / %d --- A1: %d / %d --- static: %d\n", cp, video_st.next_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base, static_pts);
+        
+        if (encode_video && cp <= 0) {
+            printf("... Video\n");
+            encode_video = !write_video_frame(oc, &video_st);
+        } else {
+            printf("... Audio\n");
+            encode_audio = !write_audio_frame(oc, &audio_st);
+        }
 
         /* select the stream to encode */
 //        if (encode_video &&
 //            (!encode_audio || av_compare_ts(video_st.next_pts, video_st.enc->time_base,
 //                                            audio_st.next_pts, audio_st.enc->time_base) <= 0)) {
+//            printf("... Video\n");
 //            encode_video = !write_video_frame(oc, &video_st);
 //        } else {
+//            printf("... Audio\n");
 //            encode_audio = !write_audio_frame(oc, &audio_st);
 //        }
     }
