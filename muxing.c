@@ -60,6 +60,30 @@ AVFrame *pCamFrame = NULL;
 int camVideoStreamIndex = -1;
 struct SwsContext *pCamSwsContext = NULL;
 
+
+const char *pMicName = ":Built-in Microphone";
+AVFormatContext *pMicFormatCtx = NULL;
+AVInputFormat *pMicInputFormat = NULL;
+AVDictionary *pMicOpt = NULL;
+AVCodecContext *pMicCodecCtx = NULL;
+AVCodec *pMicCodec = NULL;
+AVPacket micPacket;
+AVFrame *pMicFrame = NULL;
+int camAudioStreamIndex = -1;
+struct SwrContext *swr_ctx = NULL;
+// TODO: Decide what to do with this
+uint8_t **src_data = NULL;
+int src_nb_samples = 512, dst_nb_samples;
+float t;
+
+// TODO: Take in_ values from codec so that it's generic
+int64_t src_ch_layout = AV_CH_LAYOUT_STEREO;
+int64_t dst_ch_layout = AV_CH_LAYOUT_STEREO;
+int src_rate = 44100;
+int dst_rate = 44100;
+enum AVSampleFormat src_sample_fmt = AV_SAMPLE_FMT_FLT;
+enum AVSampleFormat dst_sample_fmt = AV_SAMPLE_FMT_S16;
+
 // a wrapper around a single output AVStream
 typedef struct OutputStream {
     AVStream *st;
@@ -295,27 +319,59 @@ static void open_audio(AVFormatContext *oc, AVCodec *codec, OutputStream *ost, A
  * 'nb_channels' channels. */
 static AVFrame *get_audio_frame(OutputStream *ost)
 {
-    AVFrame *frame = ost->tmp_frame;
-    int j, i, v;
-    int16_t *q = (int16_t*)frame->data[0];
-
-    /* check if we want to generate more frames */
-    if (av_compare_ts(ost->next_pts, ost->enc->time_base,
-                      STREAM_DURATION, (AVRational){ 1, 1 }) >= 0)
-        return NULL;
-
-    for (j = 0; j <frame->nb_samples; j++) {
-        v = (int)(sin(ost->t) * 10000);
-        for (i = 0; i < ost->enc->channels; i++)
-            *q++ = v;
-        ost->t     += ost->tincr;
-        ost->tincr += ost->tincr2;
+    // TODO: do not use infinite loop
+    while(1) {
+        printf("Get audio frame...\n");
+        int ret = av_read_frame(pMicFormatCtx, &micPacket);
+        if (micPacket.stream_index == camAudioStreamIndex) {
+            AVFrame *decoded_frame = av_frame_alloc();
+            int micFrameFinished = 0;
+            int size = avcodec_decode_audio4 (pMicCodecCtx, decoded_frame, &micFrameFinished, &micPacket);
+            
+            int sampleCount = 0;
+            if (micFrameFinished) {
+                printf("Stream (mic): Sample rate: %d, Channel layout: %d, Channels: %d, Samples: %d\n", decoded_frame->sample_rate, decoded_frame->channel_layout, decoded_frame->channels, decoded_frame->nb_samples);
+                
+                src_data = decoded_frame->data;
+                
+                dst_nb_samples = 1152;
+                float tincr = 1.0 / src_rate;
+                t += (tincr * src_nb_samples);
+                
+                ret = swr_convert(swr_ctx, decoded_frame->data, dst_nb_samples, (const uint8_t **)src_data, src_nb_samples);
+                printf("t:%f in:%d out:%d\n", t, src_nb_samples, ret);
+                if (ret < 0) {
+                    fprintf(stderr, "Error while converting\n");
+                    exit(-1);
+                }
+                return decoded_frame;
+            }
+        }
     }
 
-    frame->pts = ost->next_pts;
-    ost->next_pts  += frame->nb_samples;
-
-    return frame;
+    
+    
+//    AVFrame *frame = ost->tmp_frame;
+//    int j, i, v;
+//    int16_t *q = (int16_t*)frame->data[0];
+//
+//    /* check if we want to generate more frames */
+//    if (av_compare_ts(ost->next_pts, ost->enc->time_base,
+//                      STREAM_DURATION, (AVRational){ 1, 1 }) >= 0)
+//        return NULL;
+//
+//    for (j = 0; j <frame->nb_samples; j++) {
+//        v = (int)(sin(ost->t) * 10000);
+//        for (i = 0; i < ost->enc->channels; i++)
+//            *q++ = v;
+//        ost->t     += ost->tincr;
+//        ost->tincr += ost->tincr2;
+//    }
+//
+//    frame->pts = ost->next_pts;
+//    ost->next_pts  += frame->nb_samples;
+//
+//    return frame;
 }
 
 /*
@@ -336,34 +392,34 @@ static int write_audio_frame(AVFormatContext *oc, OutputStream *ost)
 
     frame = get_audio_frame(ost);
 
-    if (frame) {
-        /* convert samples from native format to destination codec format, using the resampler */
-            /* compute destination number of samples */
-            dst_nb_samples = av_rescale_rnd(swr_get_delay(ost->swr_ctx, c->sample_rate) + frame->nb_samples,
-                                            c->sample_rate, c->sample_rate, AV_ROUND_UP);
-            av_assert0(dst_nb_samples == frame->nb_samples);
-
-        /* when we pass a frame to the encoder, it may keep a reference to it
-         * internally;
-         * make sure we do not overwrite it here
-         */
-        ret = av_frame_make_writable(ost->frame);
-        if (ret < 0)
-            exit(1);
-
-        /* convert to destination format */
-        ret = swr_convert(ost->swr_ctx,
-                          ost->frame->data, dst_nb_samples,
-                          (const uint8_t **)frame->data, frame->nb_samples);
-        if (ret < 0) {
-            fprintf(stderr, "Error while converting\n");
-            exit(1);
-        }
-        frame = ost->frame;
-
-        frame->pts = av_rescale_q(ost->samples_count, (AVRational){1, c->sample_rate}, c->time_base);
-        ost->samples_count += dst_nb_samples;
-    }
+//    if (frame) {
+//        /* convert samples from native format to destination codec format, using the resampler */
+//            /* compute destination number of samples */
+//            dst_nb_samples = av_rescale_rnd(swr_get_delay(ost->swr_ctx, c->sample_rate) + frame->nb_samples,
+//                                            c->sample_rate, c->sample_rate, AV_ROUND_UP);
+//            av_assert0(dst_nb_samples == frame->nb_samples);
+//
+//        /* when we pass a frame to the encoder, it may keep a reference to it
+//         * internally;
+//         * make sure we do not overwrite it here
+//         */
+//        ret = av_frame_make_writable(ost->frame);
+//        if (ret < 0)
+//            exit(1);
+//
+//        /* convert to destination format */
+//        ret = swr_convert(ost->swr_ctx,
+//                          ost->frame->data, dst_nb_samples,
+//                          (const uint8_t **)frame->data, frame->nb_samples);
+//        if (ret < 0) {
+//            fprintf(stderr, "Error while converting\n");
+//            exit(1);
+//        }
+//        frame = ost->frame;
+//
+//        frame->pts = av_rescale_q(ost->samples_count, (AVRational){1, c->sample_rate}, c->time_base);
+//        ost->samples_count += dst_nb_samples;
+//    }
 
     ret = avcodec_encode_audio2(c, &pkt, frame, &got_packet);
     if (ret < 0) {
@@ -372,6 +428,8 @@ static int write_audio_frame(AVFormatContext *oc, OutputStream *ost)
     }
 
     if (got_packet) {
+        printf("READY\n");
+//        exit(1);
         ret = write_frame(oc, &c->time_base, ost->st, &pkt);
         if (ret < 0) {
             fprintf(stderr, "Error while writing audio frame: %s\n",
@@ -751,7 +809,7 @@ int main(int argc, char **argv)
     
     
     /*
-     * Start camera capture
+     * Video
      */
     pCamFormatCtx = avformat_alloc_context();
     pCamInputFormat = av_find_input_format("avfoundation");
@@ -788,8 +846,71 @@ int main(int argc, char **argv)
     }
     pCamFrame = av_frame_alloc();
     
+    /*
+     * Audio
+     */
+    pMicFormatCtx = avformat_alloc_context();
+    pMicInputFormat = av_find_input_format("avfoundation");
+    if (avformat_open_input(&pMicFormatCtx, pMicName, pMicInputFormat, &pMicOpt) != 0) {
+        printf("Mic: Can't open format\n");
+        return -1;
+    }
+    if (avformat_find_stream_info(pMicFormatCtx, NULL) < 0) {
+        printf("Mic: Can't find stream information\n");
+        return -1;
+    }
+    av_dump_format(pMicFormatCtx, 0, pMicName, 0);
+    for(int i=0; i<pMicFormatCtx->nb_streams; i++) {
+        if(pMicFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+            camAudioStreamIndex = i;
+            break;
+        }
+    }
+    printf("Audio stream index: %d\n", camAudioStreamIndex);
+    if (camAudioStreamIndex == -1) {
+        return -1;
+    }
+    pMicCodecCtx = pMicFormatCtx->streams[camAudioStreamIndex]->codec;
+    pMicCodec = avcodec_find_decoder(pMicCodecCtx->codec_id);
+    if (pCamCodec==NULL) {
+        printf("Codec %d not found\n", pMicCodecCtx->codec_id);
+        return -1;
+    }
+    if (avcodec_open2(pMicCodecCtx, pMicCodec, NULL) < 0) {
+        printf("Can't open audio codec\n");
+        return -1;
+    }
     
+    pMicFrame = av_frame_alloc();
+    if (!pMicFrame) {
+        fprintf(stderr, "Could not allocate audio frame\n");
+        exit(1);
+    }
+    /* create resampler context */
+    swr_ctx = swr_alloc();
+    if (!swr_ctx) {
+        fprintf(stderr, "Could not allocate resampler context\n");
+        ret = AVERROR(ENOMEM);
+        // TODO: Handle all exist() calls
+        exit(-1);
+    }
 
+    
+    /* set options */
+    av_opt_set_int(swr_ctx, "in_channel_layout",    src_ch_layout, 0);
+    av_opt_set_int(swr_ctx, "in_sample_rate",       src_rate, 0);
+    av_opt_set_sample_fmt(swr_ctx, "in_sample_fmt", src_sample_fmt, 0);
+    
+    av_opt_set_int(swr_ctx, "out_channel_layout",    dst_ch_layout, 0);
+    av_opt_set_int(swr_ctx, "out_sample_rate",       dst_rate, 0);
+    av_opt_set_sample_fmt(swr_ctx, "out_sample_fmt", dst_sample_fmt, 0);
+    
+    /* initialize the resampling context */
+    if ((ret = swr_init(swr_ctx)) < 0) {
+        fprintf(stderr, "Failed to initialize the resampling context\n");
+        exit(-1);
+    }
+    
     while (encode_video || encode_audio) {
         
 //        encode_video = !write_video_frame(oc, &video_st);

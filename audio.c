@@ -43,7 +43,7 @@
 
 #define MAX_AUDIO_FRAME_SIZE 192000 // 1 second of 48khz 32bit audio
 
-const char *pCamName = "FaceTime HD Camera:0";
+const char *pCamName = ":Built-in Microphone";
 AVFormatContext *pCamFormatCtx = NULL;
 AVInputFormat *pCamInputFormat = NULL;
 AVDictionary *pCamOpt = NULL;
@@ -201,7 +201,7 @@ int main(int argc, char **argv)
     }
     uint64_t out_channel_layout=AV_CH_LAYOUT_STEREO;
     //nb_samples: AAC-1024 MP3-1152
-    int out_nb_samples=512;
+    int out_nb_samples=1152;
     enum AVSampleFormat out_sample_fmt;
     out_sample_fmt=AV_SAMPLE_FMT_S16;
     int out_sample_rate=44100;
@@ -289,81 +289,145 @@ int main(int argc, char **argv)
     max_dst_nb_samples = dst_nb_samples =
     av_rescale_rnd(src_nb_samples, dst_rate, src_rate, AV_ROUND_UP);
     
+    dst_nb_samples = 1152;
+    
     /* buffer is going to be directly written to a rawaudio file, no alignment */
     dst_nb_channels = av_get_channel_layout_nb_channels(dst_ch_layout);
     ret = av_samples_alloc_array_and_samples(&dst_data, &dst_linesize, dst_nb_channels,
                                              dst_nb_samples, dst_sample_fmt, 0);
+    
+    printf("SAMPLES: %d vs. %d\n", dst_nb_samples, ret);
     if (ret < 0) {
         fprintf(stderr, "Could not allocate destination samples\n");
         goto end;
     }
     
     t = 0;
+    int x = 0;
     do {
         int ret = av_read_frame(pCamFormatCtx, &camPacket);
         
         if (camPacket.stream_index == camAudioStreamIndex) {
             
             AVFrame *decoded_frame = av_frame_alloc();
+            //decoded_frame->nb_samples = 1152;
             int camFrameFinished = 0;
             //decode(pCamCodecCtx,&camPacket,decoded_frame,NULL);
             int size = avcodec_decode_audio4 (pCamCodecCtx, decoded_frame, &camFrameFinished, &camPacket);
             
             int sampleCount = 0;
             if (camFrameFinished) {
-                printf("Stream (mic 2): Sample rate: %d, Channel layout: %d, Channels: %d, Samples: %d\n", decoded_frame->sample_rate, decoded_frame->channel_layout, decoded_frame->channels, decoded_frame->nb_samples);
-                
-                //float tincr = 1.0 / src_rate;
-                //t += tincr;
-                
                 src_data = decoded_frame->data;
+                //http://stackoverflow.com/questions/32051847/c-ffmpeg-distorted-sound-when-converting-audio
+                uint8_t *convertedData=NULL;
                 
-                /* generate synthetic audio */
-                fill_samples((float *)src_data[0], src_nb_samples, src_nb_channels, src_rate, &t);
-                
-                /* compute destination number of samples */
-//                dst_nb_samples = av_rescale_rnd(swr_get_delay(swr_ctx, src_rate) +
-//                                                src_nb_samples, dst_rate, src_rate, AV_ROUND_UP);
-//                if (dst_nb_samples > max_dst_nb_samples) {
-//                    av_freep(&dst_data[0]);
-//                    ret = av_samples_alloc(dst_data, &dst_linesize, dst_nb_channels,
-//                                           dst_nb_samples, dst_sample_fmt, 1);
-//                    if (ret < 0)
-//                        break;
-//                    max_dst_nb_samples = dst_nb_samples;
-//                }
-                
-                dst_nb_samples = 1152;
-                
-                /* convert to destination format */
-                ret = swr_convert(swr_ctx, dst_data, dst_nb_samples, (const uint8_t **)src_data, src_nb_samples);
-                printf("t:%f in:%d out:%d\n", t, src_nb_samples, ret);
-                if (ret < 0) {
-                    fprintf(stderr, "Error while converting\n");
-                    goto end;
+                if (av_samples_alloc(&convertedData, NULL, 2, 1152, dst_sample_fmt, 0) < 0) {
+                    printf("ERROR\n");
+                    exit(-1);
                 }
-//                dst_bufsize = av_samples_get_buffer_size(&dst_linesize, dst_nb_channels,
-//                                                         ret, dst_sample_fmt, 1);
-//                if (dst_bufsize < 0) {
-//                    fprintf(stderr, "Could not get sample buffer size\n");
+                
+                int outSamples = swr_convert(swr_ctx, NULL, 0,
+                                             //&convertedData,
+                                             //audioFrameConverted->nb_samples,
+                                             (const uint8_t **)src_data, src_nb_samples);
+                if (outSamples < 0) {
+                    printf("No samples \n");
+                    exit(-1);
+                }
+                
+                for (;;) {
+                    outSamples = swr_get_out_samples(swr_ctx, 0);
+                    printf("Out: %d\n", outSamples);
+                    // 2 = channels of dest
+                    // 1152 = frame_size of dest
+                    if (outSamples < 1152 * 2) {
+                        break;
+                    }
+                    
+                    outSamples = swr_convert(swr_ctx, dst_data, 1152, NULL, 0);
+                    
+                    printf("Do it withOut samples: %d\n", outSamples);
+                    
+                    while(audio_len>0)//Wait until finish
+                        SDL_Delay(1);
+                    
+                    //Set audio buffer (PCM data)
+                    audio_chunk = (Uint8 *) dst_data[0];
+                    //audio_chunk = convertedData;
+                    //Audio buffer length
+                    audio_len =out_buffer_size;
+                    audio_pos = audio_chunk;
+                    
+                    //Play
+                    SDL_PauseAudio(0);
+                    
+                    x++;
+                    
+                    if (x > 100) {
+                        printf("EXIT\n");
+                        exit(-1);
+                    }
+                }
+//                printf("Stream (mic 2): Sample rate: %d, Channel layout: %d, Channels: %d, Samples: %d\n", decoded_frame->sample_rate, decoded_frame->channel_layout, decoded_frame->channels, decoded_frame->nb_samples);
+//                
+//                decoded_frame->nb_samples = 1152;
+//                
+//                //float tincr = 1.0 / src_rate;
+//                //t += tincr;
+//                
+//                src_data = decoded_frame->data;
+//                
+//                /* generate synthetic audio */
+//                fill_samples((float *)src_data[0], src_nb_samples, src_nb_channels, src_rate, &t);
+//                
+//                /* compute destination number of samples */
+////                dst_nb_samples = av_rescale_rnd(swr_get_delay(swr_ctx, src_rate) +
+////                                                src_nb_samples, dst_rate, src_rate, AV_ROUND_UP);
+////                if (dst_nb_samples > max_dst_nb_samples) {
+////                    av_freep(&dst_data[0]);
+////                    ret = av_samples_alloc(dst_data, &dst_linesize, dst_nb_channels,
+////                                           dst_nb_samples, dst_sample_fmt, 1);
+////                    if (ret < 0)
+////                        break;
+////                    max_dst_nb_samples = dst_nb_samples;
+////                }
+//                
+//                dst_nb_samples = 1152;
+//                
+//                /* convert to destination format */
+//                //ret = swr_convert(swr_ctx, dst_data, dst_nb_samples, (const uint8_t **)src_data, src_nb_samples);
+//                ret = swr_convert(swr_ctx, decoded_frame->data, dst_nb_samples, (const uint8_t **)src_data, src_nb_samples);
+//                printf("t:%f in:%d out:%d\n", t, src_nb_samples, ret);
+//                if (ret < 0) {
+//                    fprintf(stderr, "Error while converting\n");
 //                    goto end;
 //                }
-//                printf("t:%f in:%d out:%d\n", t, src_nb_samples, ret);
-//                fwrite(dst_data[0], 1, dst_bufsize, dst_file);
 //                
-                
-                
-                while(audio_len>0)//Wait until finish
-                    SDL_Delay(1);
-                
-                //Set audio buffer (PCM data)
-                audio_chunk = (Uint8 *) dst_data[0];
-                //Audio buffer length
-                audio_len =out_buffer_size;
-                audio_pos = audio_chunk;
-                
-                //Play
-                SDL_PauseAudio(0);
+//                //decoded_frame->data =NULL;
+//                
+////                dst_bufsize = av_samples_get_buffer_size(&dst_linesize, dst_nb_channels,
+////                                                         ret, dst_sample_fmt, 1);
+////                if (dst_bufsize < 0) {
+////                    fprintf(stderr, "Could not get sample buffer size\n");
+////                    goto end;
+////                }
+////                printf("t:%f in:%d out:%d\n", t, src_nb_samples, ret);
+////                fwrite(dst_data[0], 1, dst_bufsize, dst_file);
+////                
+//                
+//                
+//                while(audio_len>0)//Wait until finish
+//                    SDL_Delay(1);
+//                
+//                //Set audio buffer (PCM data)
+//                //audio_chunk = (Uint8 *) dst_data[0];
+//                audio_chunk = decoded_frame->data[0];
+//                //Audio buffer length
+//                audio_len =out_buffer_size;
+//                audio_pos = audio_chunk;
+//                
+//                //Play
+//                SDL_PauseAudio(0);
                 
             }
             
@@ -380,7 +444,7 @@ int main(int argc, char **argv)
         
         
         
-    } while (t < 10);
+    } while (t < 4);
     
     if ((ret = get_format_from_sample_fmt(&fmt, dst_sample_fmt)) < 0)
         goto end;
