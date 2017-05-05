@@ -324,19 +324,13 @@ static AVFrame *get_audio_frame(OutputStream *ost)
     AVPacket micPacket = { 0 };
     // TODO: do not use infinite loop
     while(1) {
-        printf("Address: %p, %p\n", pMicFormatCtx, &micPacket);
-        printf("a0\n");
         int ret = av_read_frame(pMicFormatCtx, &micPacket);
-        printf("a1\n");
         if (micPacket.stream_index == camAudioStreamIndex) {
-            printf("a2\n");
             int micFrameFinished = 0;
             int size = avcodec_decode_audio4 (pMicCodecCtx, decoded_frame, &micFrameFinished, &micPacket);
-            printf("a3\n");
             
             int sampleCount = 0;
             if (micFrameFinished) {
-                printf("a\n");
                 //printf("Stream (mic): Sample rate: %d, Channel layout: %d, Channels: %d, Samples: %d\n", decoded_frame->sample_rate, decoded_frame->channel_layout, decoded_frame->channels, decoded_frame->nb_samples);
                 src_data = decoded_frame->data;
                 
@@ -345,7 +339,6 @@ static AVFrame *get_audio_frame(OutputStream *ost)
                 t += (tincr * src_nb_samples);
                 
                 //ret = swr_convert(swr_ctx, decoded_frame->data, dst_nb_samples, (const uint8_t **)src_data, src_nb_samples);
-                printf("b\n");
                 // Use swr_convert() as FIFO: Put in some data
                 int outSamples = swr_convert(swr_ctx, NULL, 0, (const uint8_t **)src_data, src_nb_samples);
                 if (outSamples < 0) {
@@ -353,25 +346,21 @@ static AVFrame *get_audio_frame(OutputStream *ost)
                     exit(-1);
                 }
                 
-                printf("c\n");
                 while (1) {
                     // Get stored up data: Filled by swr_convert()
                     outSamples = swr_get_out_samples(swr_ctx, 0);
-                    printf("d\n");
                     // 2 = channels of dest
                     // 1152 = frame_size of dest
                     if (outSamples < 1152 * 2) {
                         // We don't have enough samples yet. Continue reading frames.
                         break;
                     }
-                    printf("e\n");
                     //AVFrame *frame = ost->frame;
                     // We got enough samples. Convert to destination format
                     outSamples = swr_convert(swr_ctx, final_frame->data, 1152, NULL, 0);
-                    printf("f\n");
                     final_frame->nb_samples = 1152;
                     //printf("Out samples: %d vs. %d\n", outSamples, final_frame->nb_samples);
-                    printf("Out samples: %d vs. %d\n", final_frame->pts, decoded_frame->pts);
+//                    printf("Out samples: %d vs. %d\n", final_frame->pts, decoded_frame->pts);
                     final_frame->pts = decoded_frame->pts;
                     return final_frame;
                 }
@@ -451,18 +440,14 @@ static int write_audio_frame(AVFormatContext *oc, OutputStream *ost)
 //        ost->samples_count += dst_nb_samples;
 //    }
 
-    printf("1\n");
     ret = avcodec_encode_audio2(c, &pkt, frame, &got_packet);
-    printf("2\n");
     if (ret < 0) {
         fprintf(stderr, "Error encoding audio frame: %s\n", av_err2str(ret));
         exit(1);
     }
 
     if (got_packet) {
-        printf("3\n");
         ret = write_frame(oc, &c->time_base, ost->st, &pkt);
-        printf("4\n");
         if (ret < 0) {
             fprintf(stderr, "Error while writing audio frame: %s\n",
                     av_err2str(ret));
@@ -607,14 +592,12 @@ static AVFrame *get_video_frame(OutputStream *ost)
     
     char buf[8000];
     int ret = av_read_frame(pCamFormatCtx, &camPacket);
-    printf("Ret: %d\n", ret);
     if (camPacket.stream_index == camVideoStreamIndex) {
         int camFrameFinished;
         int size = avcodec_decode_video2 (pCamCodecCtx, pCamFrame, &camFrameFinished, &camPacket);
-        printf("Size %d\n", size);
         if (camFrameFinished) {
 
-            printf("C/P: %d %d %d --- %d\n", c->width, c->height, c->pix_fmt, pCamCodecCtx->pix_fmt);
+//            printf("C/P: %d %d %d --- %d\n", c->width, c->height, c->pix_fmt, pCamCodecCtx->pix_fmt);
             
             pCamSwsContext = sws_getContext(pCamCodecCtx->width, pCamCodecCtx->height,
                                             pCamCodecCtx->pix_fmt,
@@ -626,7 +609,7 @@ static AVFrame *get_video_frame(OutputStream *ost)
                 exit(-1);
             }
             
-            printf("got picture: pts %d\n", camPacket.pts);
+            //printf("got picture: pts %d\n", camPacket.pts);
             uint8_t *picbuf;
             int picbuf_size;
             picbuf_size = avpicture_get_size(c->pix_fmt, c->width, c->height);
@@ -644,13 +627,13 @@ static AVFrame *get_video_frame(OutputStream *ost)
             
             if(camPacket.dts != AV_NOPTS_VALUE) {
                 pts = av_frame_get_best_effort_timestamp(pCamFrame);
-                printf("Is not NOPTS: %d\n", pts);
+                //printf("Is not NOPTS: %d\n", pts);
             } else {
-                printf("Is NOPTS\n");
+                //printf("Is NOPTS\n");
                 pts = 0;
             }
             pts *= av_q2d(c->time_base);
-            printf("PTS new: %d\n", pts);
+            //printf("PTS new: %d\n", pts);
             
             nextPTS();
             
@@ -663,7 +646,7 @@ static AVFrame *get_video_frame(OutputStream *ost)
             //ost->frame->pts = ost->next_pts;
             ost->frame->pts = pts;
             
-            printf("We got it: %p and: %d %d PTS: %d\n", newpicture, pCamFrame->linesize[0], newpicture->linesize[0], ost->frame->pts);
+            //printf("We got it: %p and: %d %d PTS: %d\n", newpicture, pCamFrame->linesize[0], newpicture->linesize[0], ost->frame->pts);
 
             
             return ost->frame;
@@ -959,7 +942,7 @@ int main(int argc, char **argv)
     
     while (encode_video || encode_audio) {
         
-        encode_video = !write_video_frame(oc, &video_st);
+        //encode_video = !write_video_frame(oc, &video_st);
         encode_audio = !write_audio_frame(oc, &audio_st);
         
         //int cp = av_compare_ts(video_st.next_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base);
