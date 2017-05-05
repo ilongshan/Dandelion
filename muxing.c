@@ -68,7 +68,7 @@ AVDictionary *pMicOpt = NULL;
 AVCodecContext *pMicCodecCtx = NULL;
 AVCodec *pMicCodec = NULL;
 AVPacket micPacket;
-AVFrame *pMicFrame = NULL;
+AVFrame *decoded_frame = NULL;
 int camAudioStreamIndex = -1;
 struct SwrContext *swr_ctx = NULL;
 // TODO: Decide what to do with this
@@ -324,7 +324,7 @@ static AVFrame *get_audio_frame(OutputStream *ost)
         printf("Get audio frame...\n");
         int ret = av_read_frame(pMicFormatCtx, &micPacket);
         if (micPacket.stream_index == camAudioStreamIndex) {
-            AVFrame *decoded_frame = av_frame_alloc();
+            
             int micFrameFinished = 0;
             int size = avcodec_decode_audio4 (pMicCodecCtx, decoded_frame, &micFrameFinished, &micPacket);
             
@@ -338,13 +338,32 @@ static AVFrame *get_audio_frame(OutputStream *ost)
                 float tincr = 1.0 / src_rate;
                 t += (tincr * src_nb_samples);
                 
-                ret = swr_convert(swr_ctx, decoded_frame->data, dst_nb_samples, (const uint8_t **)src_data, src_nb_samples);
-                printf("t:%f in:%d out:%d\n", t, src_nb_samples, ret);
-                if (ret < 0) {
-                    fprintf(stderr, "Error while converting\n");
+                //ret = swr_convert(swr_ctx, decoded_frame->data, dst_nb_samples, (const uint8_t **)src_data, src_nb_samples);
+                
+                // Use swr_convert() as FIFO: Put in some data
+                int outSamples = swr_convert(swr_ctx, NULL, 0, (const uint8_t **)src_data, src_nb_samples);
+                if (outSamples < 0) {
+                    printf("No samples\n");
                     exit(-1);
                 }
-                return decoded_frame;
+                
+                while (1) {
+                    // Get stored up data: Filled by swr_convert()
+                    outSamples = swr_get_out_samples(swr_ctx, 0);
+                    printf("Out: %d\n", outSamples);
+                    // 2 = channels of dest
+                    // 1152 = frame_size of dest
+                    if (outSamples < 1152 * 2) {
+                        // We don't have enough samples yet. Continue reading frames.
+                        break;
+                    }
+                    // We got enough samples. Convert to destination format
+                    outSamples = swr_convert(swr_ctx, decoded_frame->data, 1152, NULL, 0);
+                    decoded_frame->nb_samples = 1152;
+                    printf("Out samples: %d vs. %d\n", outSamples, decoded_frame->nb_samples);
+                    
+                    return decoded_frame;
+                }
             }
         }
     }
@@ -881,8 +900,8 @@ int main(int argc, char **argv)
         return -1;
     }
     
-    pMicFrame = av_frame_alloc();
-    if (!pMicFrame) {
+    decoded_frame = av_frame_alloc();
+    if (!decoded_frame) {
         fprintf(stderr, "Could not allocate audio frame\n");
         exit(1);
     }
@@ -916,19 +935,17 @@ int main(int argc, char **argv)
 //        encode_video = !write_video_frame(oc, &video_st);
 //        encode_audio = !write_audio_frame(oc, &audio_st);
         
-//        printf("Encode it: %d\n", encode_video);
-        
         //int cp = av_compare_ts(video_st.next_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base);
-        int cp = av_compare_ts(static_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base);
-        printf("Compare: %d. V1: %d / %d --- A1: %d / %d --- static: %d\n", cp, video_st.next_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base, static_pts);
-        
-        if (encode_video && cp <= 0) {
-            printf("... Video\n");
-            encode_video = !write_video_frame(oc, &video_st);
-        } else {
-            printf("... Audio\n");
-            encode_audio = !write_audio_frame(oc, &audio_st);
-        }
+//        int cp = av_compare_ts(static_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base);
+//        printf("Compare: %d. V1: %d / %d --- A1: %d / %d --- static: %d\n", cp, video_st.next_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base, static_pts);
+//        
+//        if (encode_video && cp <= 0) {
+//            printf("... Video\n");
+//            encode_video = !write_video_frame(oc, &video_st);
+//        } else {
+//            printf("... Audio\n");
+//            encode_audio = !write_audio_frame(oc, &audio_st);
+//        }
 
         /* select the stream to encode */
 //        if (encode_video &&
