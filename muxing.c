@@ -329,6 +329,9 @@ static AVFrame *get_audio_frame(OutputStream *ost)
             int micFrameFinished = 0;
             int size = avcodec_decode_audio4 (pMicCodecCtx, decoded_frame, &micFrameFinished, &micPacket);
             
+            //av_frame_free(&decoded_frame);
+            av_free_packet(&micPacket);
+            
             int sampleCount = 0;
             if (micFrameFinished) {
                 //printf("Stream (mic): Sample rate: %d, Channel layout: %d, Channels: %d, Samples: %d\n", decoded_frame->sample_rate, decoded_frame->channel_layout, decoded_frame->channels, decoded_frame->nb_samples);
@@ -412,7 +415,7 @@ static int write_audio_frame(AVFormatContext *oc, OutputStream *ost)
     c = ost->enc;
 
     frame = get_audio_frame(ost);
-    printf("Pts (audio): %d\n", frame->pts);
+//    printf("Pts (audio): %d\n", frame->pts);
 //    int64_t pts = av_frame_get_best_effort_timestamp(frame);
 //    printf("Pts 1: %d\n", pts);
 //    int64_t pts2 = av_rescale_q(ost->samples_count, (AVRational){1, c->sample_rate}, c->time_base);
@@ -463,8 +466,6 @@ static int write_audio_frame(AVFormatContext *oc, OutputStream *ost)
                     av_err2str(ret));
             exit(1);
         }
-        //if(pkt->data)
-        //    av_free_packet(&pkt);
     }
 
     return (frame || got_packet) ? 0 : 1;
@@ -955,8 +956,8 @@ int main(int argc, char **argv)
     
     while (encode_video || encode_audio) {
         
-        printf("... Video\n");
-        encode_video = !write_video_frame(oc, &video_st);
+//        printf("... Video\n");
+//        encode_video = !write_video_frame(oc, &video_st);
         printf("... Audio\n");
         encode_audio = !write_audio_frame(oc, &audio_st);
         
