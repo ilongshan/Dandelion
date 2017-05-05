@@ -107,11 +107,11 @@ static void log_packet(const AVFormatContext *fmt_ctx, const AVPacket *pkt)
 {
     AVRational *time_base = &fmt_ctx->streams[pkt->stream_index]->time_base;
 
-//    printf("pts:%s pts_time:%s dts:%s dts_time:%s duration:%s duration_time:%s stream_index:%d\n",
-//           av_ts2str(pkt->pts), av_ts2timestr(pkt->pts, time_base),
-//           av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, time_base),
-//           av_ts2str(pkt->duration), av_ts2timestr(pkt->duration, time_base),
-//           pkt->stream_index);
+    printf("pts:%s pts_time:%s dts:%s dts_time:%s duration:%s duration_time:%s stream_index:%d\n",
+           av_ts2str(pkt->pts), av_ts2timestr(pkt->pts, time_base),
+           av_ts2str(pkt->dts), av_ts2timestr(pkt->dts, time_base),
+           av_ts2str(pkt->duration), av_ts2timestr(pkt->duration, time_base),
+           pkt->stream_index);
 }
 
 static int write_frame(AVFormatContext *fmt_ctx, const AVRational *time_base, AVStream *st, AVPacket *pkt)
@@ -361,7 +361,9 @@ static AVFrame *get_audio_frame(OutputStream *ost)
                     final_frame->nb_samples = 1152;
                     //printf("Out samples: %d vs. %d\n", outSamples, final_frame->nb_samples);
 //                    printf("Out samples: %d vs. %d\n", final_frame->pts, decoded_frame->pts);
-                    final_frame->pts = decoded_frame->pts;
+                    //final_frame->pts = decoded_frame->pts;
+                    final_frame->pts = ost->next_pts;
+                    ost->next_pts += final_frame->nb_samples;
                     return final_frame;
                 }
             }
@@ -410,7 +412,15 @@ static int write_audio_frame(AVFormatContext *oc, OutputStream *ost)
     c = ost->enc;
 
     frame = get_audio_frame(ost);
-
+    printf("Pts (audio): %d\n", frame->pts);
+//    int64_t pts = av_frame_get_best_effort_timestamp(frame);
+//    printf("Pts 1: %d\n", pts);
+//    int64_t pts2 = av_rescale_q(ost->samples_count, (AVRational){1, c->sample_rate}, c->time_base);
+//    printf("Pts 2: %d %d %d %d\n", pts2, ost->samples_count, c->sample_rate, c->time_base);
+//    
+    ost->samples_count += 1152;
+//    
+    
 //    if (frame) {
 //        /* convert samples from native format to destination codec format, using the resampler */
 //            /* compute destination number of samples */
@@ -625,26 +635,29 @@ static AVFrame *get_video_frame(OutputStream *ost)
             
             int pts = 0;
             
-            if(camPacket.dts != AV_NOPTS_VALUE) {
-                pts = av_frame_get_best_effort_timestamp(pCamFrame);
-                //printf("Is not NOPTS: %d\n", pts);
-            } else {
-                //printf("Is NOPTS\n");
-                pts = 0;
-            }
-            pts *= av_q2d(c->time_base);
-            //printf("PTS new: %d\n", pts);
-            
-            nextPTS();
+//            if(camPacket.dts != AV_NOPTS_VALUE) {
+//                pts = av_frame_get_best_effort_timestamp(pCamFrame);
+//                //printf("Is not NOPTS: %d\n", pts);
+//            } else {
+//                //printf("Is NOPTS\n");
+//                pts = 0;
+//            }
+//            pts *= av_q2d(c->time_base);
+//            //printf("PTS new: %d\n", pts);
+//            
+//            nextPTS();
             
             //newpicture->pts = av_rescale_q(nextPTS(), (AVRational){1, c->sample_rate}, c->time_base);
             //printf("---> %d, Samples: %d\n", newpicture->pts, nextPTS());
             
             ost->frame = newpicture;
-            //ost->next_pts = ost->next_pts + 2350;
+            ost->next_pts = ost->next_pts + 2351;
             //ost->next_pts = (1.0 / 30) * 90 * nextPTS();
-            //ost->frame->pts = ost->next_pts;
-            ost->frame->pts = pts;
+            ost->frame->pts = ost->next_pts;
+            //ost->frame->pts = pts;
+            //ost->frame->pts = ost->next_pts++;
+            
+            printf("Pts (video): %d\n", ost->frame->pts);
             
             //printf("We got it: %p and: %d %d PTS: %d\n", newpicture, pCamFrame->linesize[0], newpicture->linesize[0], ost->frame->pts);
 
@@ -942,10 +955,15 @@ int main(int argc, char **argv)
     
     while (encode_video || encode_audio) {
         
-        //encode_video = !write_video_frame(oc, &video_st);
+        printf("... Video\n");
+        encode_video = !write_video_frame(oc, &video_st);
+        printf("... Audio\n");
         encode_audio = !write_audio_frame(oc, &audio_st);
         
-        //int cp = av_compare_ts(video_st.next_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base);
+//        printf("Video: %d / %d --- Audio: %d / %d --- static: %d\n", video_st.next_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base, static_pts);
+//        nextPTS();
+//        
+//        //int cp = av_compare_ts(video_st.next_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base);
 //        int cp = av_compare_ts(static_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base);
 //        //printf("Compare: %d. V1: %d / %d --- A1: %d / %d --- static: %d\n", cp, video_st.next_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base, static_pts);
 //        
@@ -956,8 +974,8 @@ int main(int argc, char **argv)
 //            printf("... Audio\n");
 //            encode_audio = !write_audio_frame(oc, &audio_st);
 //        }
-
-        /* select the stream to encode */
+        
+//        /* select the stream to encode */
 //        if (encode_video &&
 //            (!encode_audio || av_compare_ts(video_st.next_pts, video_st.enc->time_base,
 //                                            audio_st.next_pts, audio_st.enc->time_base) <= 0)) {

@@ -142,7 +142,7 @@ void packet_queue_init(PacketQueue *q) {
 int packet_queue_put(PacketQueue *q, AVPacket *pkt) {
     
     pthread_t ptid = pthread_self();
-    printf("[packet_queue_put] Queue: %p / Thread: %d\n", q, ptid);
+    //printf("[packet_queue_put] Queue: %p / Thread: %d\n", q, ptid);
     
     AVPacketList *pkt1;
     // TODO: use AVPacket tmp_pkt = {0}; instead
@@ -176,28 +176,28 @@ int packet_queue_put(PacketQueue *q, AVPacket *pkt) {
 //        return 0;
 //    }
 
-    printf("[packet_queue_put] Packet at: %p\n", pkt1);
+    //printf("[packet_queue_put] Packet at: %p\n", pkt1);
     
-    printf("[packet_queue_put] Queue size: %d / %d. Signal waiter.\n", q->nb_packets, q->size);
+    //printf("[packet_queue_put] Queue size: %d / %d. Signal waiter.\n", q->nb_packets, q->size);
     SDL_CondSignal(q->cond);
-    printf("[packet_queue_put] Unlock mutex\n");
+    //printf("[packet_queue_put] Unlock mutex\n");
     SDL_UnlockMutex(q->mutex);
-    printf("[packet_queue_put] OK\n");
+    //printf("[packet_queue_put] OK\n");
     return 0;
 }
 static int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block) {
     pthread_t ptid = pthread_self();
     
-    printf("[packet_queue_get] Queue: %p / Thread: %d\n", q, ptid);
+    //printf("[packet_queue_get] Queue: %p / Thread: %d\n", q, ptid);
     
     
     
     AVPacketList *pkt1 = NULL;
     int ret = 0;
     
-    printf("[packet_queue_get] Before lock\n");
+    //printf("[packet_queue_get] Before lock\n");
     SDL_LockMutex(q->mutex);
-    printf("[packet_queue_get] After lock\n");
+    //printf("[packet_queue_get] After lock\n");
     
     while(true) {
         
@@ -208,7 +208,7 @@ static int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block) {
         }
         
         pkt1 = q->first_pkt;
-        printf("[packet_queue_get] pkt1 at: %p\n", pkt1);
+        //printf("[packet_queue_get] pkt1 at: %p\n", pkt1);
         if (pkt1) {
             //printf("[packet_queue_get] 1\n");
             q->first_pkt = pkt1->next;
@@ -217,7 +217,7 @@ static int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block) {
             q->nb_packets--;
             q->size -= pkt1->pkt.size;
             *pkt = pkt1->pkt;
-            printf("[packet_queue_get] Queue: %p / Thread: %d, Got packet at: %p\n", q,ptid, pkt);
+            //printf("[packet_queue_get] Queue: %p / Thread: %d, Got packet at: %p\n", q,ptid, pkt);
             av_free(pkt1);
             ret = 1;
             break;
@@ -226,14 +226,14 @@ static int packet_queue_get(PacketQueue *q, AVPacket *pkt, int block) {
             ret = 0;
             break;
         } else {
-            printf("[packet_queue_get] BLOCK\n");
+            //printf("[packet_queue_get] BLOCK\n");
             SDL_CondWait(q->cond, q->mutex);
-            printf("[packet_queue_get] UNBLOCK\n");
+            //printf("[packet_queue_get] UNBLOCK\n");
         }
     }
-    printf("[packet_queue_get] Before unlock\n");
+    //printf("[packet_queue_get] Before unlock\n");
     SDL_UnlockMutex(q->mutex);
-    printf("[packet_queue_get] End.\n");
+    //printf("[packet_queue_get] End.\n");
     return ret;
 }
 
@@ -243,20 +243,21 @@ int audio_decode_frame(VideoState *is, uint8_t *audio_buf, int buf_size) {
     AVPacket *pkt = &is->audio_pkt;
     
     for(;;) {
-        printf("[audio_decode_frame] is->audio_pkt_size = %d\n", is->audio_pkt_size);
+        //printf("[audio_decode_frame] is->audio_pkt_size = %d\n", is->audio_pkt_size);
         while(is->audio_pkt_size > 0) {
             int got_frame = 0;
             len1 = avcodec_decode_audio4(is->audio_ctx, &is->audio_frame, &got_frame, pkt);
             if(len1 < 0) {
-                printf("[audio_decode_frame] HANDLE ERROR\n");
+                //printf("[audio_decode_frame] HANDLE ERROR\n");
                 /* if error, skip frame */
                 is->audio_pkt_size = 0;
                 break;
             }
             data_size = 0;
             if(got_frame) {
-                printf("[audio_decode_frame] We got a frame, resample it\n");
+                //printf("[audio_decode_frame] We got a frame, resample it\n");
                 AVFrame *pFrame = &is->audio_frame;
+                printf("PTS (audio): %d\n", pFrame->pts);
                 swr_convert(au_convert_ctx,&audio_buf, MAX_AUDIO_FRAME_SIZE,(const uint8_t **)pFrame->data , pFrame->nb_samples);
                 
                 data_size = av_samples_get_buffer_size(NULL,
@@ -267,17 +268,17 @@ int audio_decode_frame(VideoState *is, uint8_t *audio_buf, int buf_size) {
                 assert(data_size <= buf_size);
                 //memcpy(audio_buf, is->audio_frame.data[0], data_size);
             } else {
-                printf("[audio_decode_frame] We NOT GOT a frame, wait for it\n");
+                //printf("[audio_decode_frame] We NOT GOT a frame, wait for it\n");
             }
                 
             is->audio_pkt_data += len1;
             is->audio_pkt_size -= len1;
             if(data_size <= 0) {
-                printf("[audio_decode_frame] No data yet, get more frames\n");
+                //printf("[audio_decode_frame] No data yet, get more frames\n");
                 /* No data yet, get more frames */
                 continue;
             }
-            printf("[audio_decode_frame] We have data. Size: %d\n", data_size);
+            //printf("[audio_decode_frame] We have data. Size: %d\n", data_size);
             /* We have data, return it and come back for more later */
             return data_size;
         }
@@ -288,13 +289,13 @@ int audio_decode_frame(VideoState *is, uint8_t *audio_buf, int buf_size) {
             return -1;
         }
         /* next packet */
-        printf("[audio_decode_frame] Get next packet\n");
+        //printf("[audio_decode_frame] Get next packet\n");
         int ret = packet_queue_get(&is->audioq, pkt, 1);
-        printf("[audio_decode_frame] Get next packet -\n");
+        //printf("[audio_decode_frame] Get next packet -\n");
         if(ret < 0) {
             return -1;
         }
-        printf("[audio_decode_frame] Get next packet: DONE. Size: %d\n", pkt->size);
+        //printf("[audio_decode_frame] Get next packet: DONE. Size: %d\n", pkt->size);
         is->audio_pkt_data = pkt->data;
         is->audio_pkt_size = pkt->size;
     }
@@ -303,7 +304,7 @@ int audio_decode_frame(VideoState *is, uint8_t *audio_buf, int buf_size) {
 void audio_callback(void *userdata, Uint8 *stream, int len) {
     
     pthread_t ptid = pthread_self();
-    printf("Thread: %d\n", ptid);
+    //printf("Thread: %d\n", ptid);
     
 //    printf("---> Callback called: %d\n", len);
 //    
@@ -350,7 +351,7 @@ void audio_callback(void *userdata, Uint8 *stream, int len) {
     
     
     
-    printf("---> Callback called: %d\n", len);
+    //printf("---> Callback called: %d\n", len);
     
     //SDL 2.0
     SDL_memset(stream, 0, len);
@@ -360,9 +361,9 @@ void audio_callback(void *userdata, Uint8 *stream, int len) {
     AVPacket *packet = &is->audio_pkt;
     //AVFrame *pFrame = &is->audio_frame;
     
-    printf("[audio_decode_frame] Get next packet\n");
+    //printf("[audio_decode_frame] Get next packet\n");
     int ret = packet_queue_get(&is->audioq, packet, 0);
-    printf("[audio_decode_frame] Get next packet -\n");
+    //printf("[audio_decode_frame] Get next packet -\n");
     if(ret < 0) {
         printf("Error.\n");
         return;
@@ -382,13 +383,14 @@ void audio_callback(void *userdata, Uint8 *stream, int len) {
     uint8_t *audio_buf = is->audio_buf;
     if (got_frame > 0) {
         AVFrame *pFrame = &is->audio_frame;
+        printf("PTS (audio): %d\n", pFrame->pts);
         ret = swr_convert(au_convert_ctx, &audio_buf,MAX_AUDIO_FRAME_SIZE, (const uint8_t **)pFrame->data, pFrame->nb_samples);
-        printf("index:%5d\t pts:%d / %d\n",packet->pts,packet->size, ret);
+        //printf("index:%5d\t pts:%d / %d\n",packet->pts,packet->size, ret);
     }
     SDL_MixAudio(stream, (uint8_t *)is->audio_buf, len, SDL_MIX_MAXVOLUME);
     //SDL_Delay(10);
     av_packet_unref(packet);
-    printf("<--- Callback done: %d\n", len);
+    //printf("<--- Callback done: %d\n", len);
     
     
     
@@ -526,7 +528,7 @@ int decode(AVCodecContext *avctx, AVFrame *frame, int *got_frame, AVPacket *pkt)
 }
 
 int queue_picture(VideoState *is, AVFrame *pFrame) {
-    printf("[queue_picture]\n");
+    //printf("[queue_picture]\n");
     
     VideoPicture *vp;
     int dst_pix_fmt;
@@ -586,7 +588,7 @@ int queue_picture(VideoState *is, AVFrame *pFrame) {
 }
 
 int video_thread(void *arg) {
-    printf("[video_thread]\n");
+    //printf("[video_thread]\n");
     VideoState *is = (VideoState *)arg;
     AVFrame *pFrame = NULL;
     // TODO: Try with = NULL instead of creating a dummy object
@@ -608,6 +610,7 @@ int video_thread(void *arg) {
         decode(is->video_ctx, pFrame, &frameFinished, packet);
         // Did we get a video frame?
         if (frameFinished) {
+            printf("PTS (video): %d\n", pFrame->pts);
             //printf("[video_thread] Frame is finished.\n");
             if(queue_picture(is, pFrame) < 0) {
                 break;
@@ -717,7 +720,7 @@ int stream_component_open(VideoState *is, int stream_index) {
 }
 
 int decode_thread(void *arg) {
-    printf("[decode_thread] Called.\n");
+    //printf("[decode_thread] Called.\n");
     
     VideoState *is = (VideoState *)arg;
     AVFormatContext *pFormatCtx = NULL;
@@ -843,19 +846,15 @@ int decode_thread(void *arg) {
 //        }
         
 //        SDL_PauseAudio(0);
-        printf("Samples1\n");
         //FIX:Some Codec's Context Information is missing
         in_channel_layout=av_get_default_channel_layout(pCodecCtx->channels);
         //Swr
-        printf("Samples12\n");
         au_convert_ctx = swr_alloc();
         au_convert_ctx = swr_alloc_set_opts(au_convert_ctx,
                                           out_channel_layout, out_sample_fmt,        out_sample_rate,
                                           in_channel_layout,  pCodecCtx->sample_fmt, pCodecCtx->sample_rate,
                                           0, NULL);
-        printf("Samples13\n");
         swr_init(au_convert_ctx);
-        printf("Samples14\n");
         avformat_flush(is->pFormatCtx);
         
         int got_picture;
@@ -892,7 +891,7 @@ int decode_thread(void *arg) {
             if(packet->stream_index == is->videoStream) {
                 packet_queue_put(&is->videoq, packet);
             } else if(packet->stream_index == audio_index) {
-                printf("Audio...: %d - %d\n", c, is->audioq.nb_packets);
+                //printf("Audio...: %d - %d\n", c, is->audioq.nb_packets);
                 packet_queue_put(&is->audioq, packet);
 
                 
