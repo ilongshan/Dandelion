@@ -302,6 +302,18 @@ int main(int argc, char **argv)
         goto end;
     }
     
+    AVFrame *decoded_frame = av_frame_alloc();
+    AVFrame *final_frame = av_frame_alloc();
+    final_frame->format = dst_sample_fmt;
+    final_frame->channel_layout = dst_ch_layout;
+    final_frame->sample_rate = dst_rate;
+    final_frame->nb_samples = dst_nb_samples;
+    int ret2 = av_frame_get_buffer(final_frame, 0);
+    if (ret2 < 0) {
+        fprintf(stderr, "Error allocating an audio buffer\n");
+        exit(1);
+    }
+    
     t = 0;
     int x = 0;
     do {
@@ -309,7 +321,7 @@ int main(int argc, char **argv)
         
         if (camPacket.stream_index == camAudioStreamIndex) {
             
-            AVFrame *decoded_frame = av_frame_alloc();
+            
             //decoded_frame->nb_samples = 1152;
             int camFrameFinished = 0;
             //decode(pCamCodecCtx,&camPacket,decoded_frame,NULL);
@@ -344,7 +356,8 @@ int main(int argc, char **argv)
                         break;
                     }
                     
-                    outSamples = swr_convert(swr_ctx, dst_data, 1152, NULL, 0);
+                    //outSamples = swr_convert(swr_ctx, dst_data, 1152, NULL, 0);
+                    outSamples = swr_convert(swr_ctx, final_frame->data, 1152, NULL, 0);
                     
                     printf("Do it withOut samples: %d\n", outSamples);
                     
@@ -352,7 +365,8 @@ int main(int argc, char **argv)
                         SDL_Delay(1);
                     
                     //Set audio buffer (PCM data)
-                    audio_chunk = (Uint8 *) dst_data[0];
+                    audio_chunk = (Uint8 *)final_frame->data[0];
+                    //audio_chunk = (Uint8 *) dst_data[0];
                     //audio_chunk = convertedData;
                     //Audio buffer length
                     audio_len =out_buffer_size;

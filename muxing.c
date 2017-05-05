@@ -67,7 +67,7 @@ AVInputFormat *pMicInputFormat = NULL;
 AVDictionary *pMicOpt = NULL;
 AVCodecContext *pMicCodecCtx = NULL;
 AVCodec *pMicCodec = NULL;
-AVPacket micPacket;
+//AVPacket micPacket;
 AVFrame *decoded_frame = NULL;
 int camAudioStreamIndex = -1;
 struct SwrContext *swr_ctx = NULL;
@@ -75,6 +75,7 @@ struct SwrContext *swr_ctx = NULL;
 uint8_t **src_data = NULL;
 int src_nb_samples = 512, dst_nb_samples;
 float t;
+AVFrame *final_frame = NULL;
 
 // TODO: Take in_ values from codec so that it's generic
 int64_t src_ch_layout = AV_CH_LAYOUT_STEREO;
@@ -319,19 +320,24 @@ static void open_audio(AVFormatContext *oc, AVCodec *codec, OutputStream *ost, A
  * 'nb_channels' channels. */
 static AVFrame *get_audio_frame(OutputStream *ost)
 {
+    
+    AVPacket micPacket = { 0 };
     // TODO: do not use infinite loop
     while(1) {
-        printf("Get audio frame...\n");
+        printf("Address: %p, %p\n", pMicFormatCtx, &micPacket);
+        printf("a0\n");
         int ret = av_read_frame(pMicFormatCtx, &micPacket);
+        printf("a1\n");
         if (micPacket.stream_index == camAudioStreamIndex) {
-            
+            printf("a2\n");
             int micFrameFinished = 0;
             int size = avcodec_decode_audio4 (pMicCodecCtx, decoded_frame, &micFrameFinished, &micPacket);
+            printf("a3\n");
             
             int sampleCount = 0;
             if (micFrameFinished) {
-                printf("Stream (mic): Sample rate: %d, Channel layout: %d, Channels: %d, Samples: %d\n", decoded_frame->sample_rate, decoded_frame->channel_layout, decoded_frame->channels, decoded_frame->nb_samples);
-                
+                printf("a\n");
+                //printf("Stream (mic): Sample rate: %d, Channel layout: %d, Channels: %d, Samples: %d\n", decoded_frame->sample_rate, decoded_frame->channel_layout, decoded_frame->channels, decoded_frame->nb_samples);
                 src_data = decoded_frame->data;
                 
                 dst_nb_samples = 1152;
@@ -339,7 +345,7 @@ static AVFrame *get_audio_frame(OutputStream *ost)
                 t += (tincr * src_nb_samples);
                 
                 //ret = swr_convert(swr_ctx, decoded_frame->data, dst_nb_samples, (const uint8_t **)src_data, src_nb_samples);
-                
+                printf("b\n");
                 // Use swr_convert() as FIFO: Put in some data
                 int outSamples = swr_convert(swr_ctx, NULL, 0, (const uint8_t **)src_data, src_nb_samples);
                 if (outSamples < 0) {
@@ -347,22 +353,27 @@ static AVFrame *get_audio_frame(OutputStream *ost)
                     exit(-1);
                 }
                 
+                printf("c\n");
                 while (1) {
                     // Get stored up data: Filled by swr_convert()
                     outSamples = swr_get_out_samples(swr_ctx, 0);
-                    printf("Out: %d\n", outSamples);
+                    printf("d\n");
                     // 2 = channels of dest
                     // 1152 = frame_size of dest
                     if (outSamples < 1152 * 2) {
                         // We don't have enough samples yet. Continue reading frames.
                         break;
                     }
+                    printf("e\n");
+                    //AVFrame *frame = ost->frame;
                     // We got enough samples. Convert to destination format
-                    outSamples = swr_convert(swr_ctx, decoded_frame->data, 1152, NULL, 0);
-                    decoded_frame->nb_samples = 1152;
-                    printf("Out samples: %d vs. %d\n", outSamples, decoded_frame->nb_samples);
-                    
-                    return decoded_frame;
+                    outSamples = swr_convert(swr_ctx, final_frame->data, 1152, NULL, 0);
+                    printf("f\n");
+                    final_frame->nb_samples = 1152;
+                    //printf("Out samples: %d vs. %d\n", outSamples, final_frame->nb_samples);
+                    printf("Out samples: %d vs. %d\n", final_frame->pts, decoded_frame->pts);
+                    final_frame->pts = decoded_frame->pts;
+                    return final_frame;
                 }
             }
         }
@@ -440,21 +451,25 @@ static int write_audio_frame(AVFormatContext *oc, OutputStream *ost)
 //        ost->samples_count += dst_nb_samples;
 //    }
 
+    printf("1\n");
     ret = avcodec_encode_audio2(c, &pkt, frame, &got_packet);
+    printf("2\n");
     if (ret < 0) {
         fprintf(stderr, "Error encoding audio frame: %s\n", av_err2str(ret));
         exit(1);
     }
 
     if (got_packet) {
-        printf("READY\n");
-//        exit(1);
+        printf("3\n");
         ret = write_frame(oc, &c->time_base, ost->st, &pkt);
+        printf("4\n");
         if (ret < 0) {
             fprintf(stderr, "Error while writing audio frame: %s\n",
                     av_err2str(ret));
             exit(1);
         }
+        //if(pkt->data)
+        //    av_free_packet(&pkt);
     }
 
     return (frame || got_packet) ? 0 : 1;
@@ -905,6 +920,18 @@ int main(int argc, char **argv)
         fprintf(stderr, "Could not allocate audio frame\n");
         exit(1);
     }
+    
+    final_frame = av_frame_alloc();
+    final_frame->format = dst_sample_fmt;
+    final_frame->channel_layout = dst_ch_layout;
+    final_frame->sample_rate = dst_rate;
+    final_frame->nb_samples = 1152;
+    int ret2 = av_frame_get_buffer(final_frame, 0);
+    if (ret2 < 0) {
+        fprintf(stderr, "Error allocating an audio buffer\n");
+        exit(1);
+    }
+    
     /* create resampler context */
     swr_ctx = swr_alloc();
     if (!swr_ctx) {
@@ -932,12 +959,12 @@ int main(int argc, char **argv)
     
     while (encode_video || encode_audio) {
         
-//        encode_video = !write_video_frame(oc, &video_st);
-//        encode_audio = !write_audio_frame(oc, &audio_st);
+        encode_video = !write_video_frame(oc, &video_st);
+        encode_audio = !write_audio_frame(oc, &audio_st);
         
         //int cp = av_compare_ts(video_st.next_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base);
 //        int cp = av_compare_ts(static_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base);
-//        printf("Compare: %d. V1: %d / %d --- A1: %d / %d --- static: %d\n", cp, video_st.next_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base, static_pts);
+//        //printf("Compare: %d. V1: %d / %d --- A1: %d / %d --- static: %d\n", cp, video_st.next_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base, static_pts);
 //        
 //        if (encode_video && cp <= 0) {
 //            printf("... Video\n");

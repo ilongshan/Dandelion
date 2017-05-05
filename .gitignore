@@ -6,3 +6,7 @@ main
 *.ts
 
 muxing
+
+audio
+
+audio_test
