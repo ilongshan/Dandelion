@@ -956,8 +956,8 @@ int main(int argc, char **argv)
     
     while (encode_video || encode_audio) {
         
-//        printf("... Video\n");
-//        encode_video = !write_video_frame(oc, &video_st);
+        printf("... Video\n");
+        encode_video = !write_video_frame(oc, &video_st);
         printf("... Audio\n");
         encode_audio = !write_audio_frame(oc, &audio_st);
         
