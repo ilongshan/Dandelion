@@ -43,11 +43,17 @@
 #include <libswscale/swscale.h>
 #include <libswresample/swresample.h>
 
+#include <SDL2/SDL.h>
+#include <SDL2/SDL_thread.h>
+
 #define STREAM_DURATION   30000000000.0
 #define STREAM_FRAME_RATE 25 /* 25 images/s */
 #define STREAM_PIX_FMT    AV_PIX_FMT_YUV420P /* default pix_fmt */
 
 #define SCALE_FLAGS SWS_BICUBIC
+
+SDL_mutex *write_mutex = NULL;
+SDL_Thread *audio_thread = NULL;
 
 const char *pCamName = "FaceTime HD Camera";
 AVFormatContext *pCamFormatCtx = NULL;
@@ -103,6 +109,11 @@ typedef struct OutputStream {
     struct SwrContext *swr_ctx;
 } OutputStream;
 
+typedef struct Container {
+    OutputStream *outputStream;
+    AVFormatContext *formatContext;
+} Container;
+
 static void log_packet(const AVFormatContext *fmt_ctx, const AVPacket *pkt)
 {
     AVRational *time_base = &fmt_ctx->streams[pkt->stream_index]->time_base;
@@ -116,6 +127,7 @@ static void log_packet(const AVFormatContext *fmt_ctx, const AVPacket *pkt)
 
 static int write_frame(AVFormatContext *fmt_ctx, const AVRational *time_base, AVStream *st, AVPacket *pkt)
 {
+    
     /* rescale output packet timestamp values from codec to stream timebase */
     //av_packet_rescale_ts(pkt, *time_base, st->time_base);
     pkt->stream_index = st->index;
@@ -405,6 +417,8 @@ static AVFrame *get_audio_frame(OutputStream *ost)
 //    return frame;
 }
 
+
+
 /*
  * encode one audio frame and send it to the muxer
  * return 1 when encoding is finished, 0 otherwise
@@ -471,6 +485,18 @@ static int write_audio_frame(AVFormatContext *oc, OutputStream *ost)
     }
 
     return (frame || got_packet) ? 0 : 1;
+}
+
+int write_audio(void *arg) {
+    Container *container = (Container *)arg;
+    
+    
+    while(1) {
+        printf("... Audio\n");
+        write_audio_frame(container->formatContext, container->outputStream);
+    }
+    
+    return 0;
 }
 
 /**************************************************************/
@@ -750,6 +776,7 @@ static void close_stream(AVFormatContext *oc, OutputStream *ost)
 
 int main(int argc, char **argv)
 {
+    Container container = { 0 };
     OutputStream video_st = { 0 }, audio_st = { 0 };
     const char *filename;
     AVOutputFormat *fmt;
@@ -956,12 +983,19 @@ int main(int argc, char **argv)
         exit(-1);
     }
     
+    write_mutex = SDL_CreateMutex();
+    
+    
+    container.outputStream = &audio_st;
+    container.formatContext = oc;
+    audio_thread = SDL_CreateThread(write_audio, "write_audio", &container);
+    
     while (encode_video || encode_audio) {
         
         printf("... Video\n");
         encode_video = !write_video_frame(oc, &video_st);
-        printf("... Audio\n");
-        encode_audio = !write_audio_frame(oc, &audio_st);
+        //printf("... Audio\n");
+        //encode_audio = !write_audio_frame(oc, &audio_st);
         
 //        printf("Video: %d / %d --- Audio: %d / %d --- static: %d\n", video_st.next_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base, static_pts);
 //        nextPTS();
