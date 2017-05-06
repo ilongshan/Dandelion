@@ -65,7 +65,7 @@ AVPacket camPacket;
 AVFrame *pCamFrame = NULL;
 int camVideoStreamIndex = -1;
 struct SwsContext *pCamSwsContext = NULL;
-
+AVFrame *newpicture = NULL;
 
 const char *pMicName = ":Built-in Microphone";
 AVFormatContext *pMicFormatCtx = NULL;
@@ -140,8 +140,8 @@ static int write_frame(AVFormatContext *fmt_ctx, const AVRational *time_base, AV
 
     SDL_LockMutex(write_mutex);
     /* Write the compressed frame to the media file. */
-    log_packet(fmt_ctx, pkt);
-    //return av_interleaved_write_frame(fmt_ctx, pkt);
+    //log_packet(fmt_ctx, pkt);
+//    return av_interleaved_write_frame(fmt_ctx, pkt);
     int result = av_write_frame(fmt_ctx, pkt);
     
     SDL_UnlockMutex(write_mutex);
@@ -487,6 +487,8 @@ static int write_audio_frame(AVFormatContext *oc, OutputStream *ost)
                     av_err2str(ret));
             exit(1);
         }
+        
+        av_free_packet(&pkt);
     }
 
     return (frame || got_packet) ? 0 : 1;
@@ -634,33 +636,21 @@ static AVFrame *get_video_frame(OutputStream *ost)
     
 
     
-    char buf[8000];
+    //char buf[8000];
     int ret = av_read_frame(pCamFormatCtx, &camPacket);
     if (camPacket.stream_index == camVideoStreamIndex) {
         int camFrameFinished;
         int size = avcodec_decode_video2 (pCamCodecCtx, pCamFrame, &camFrameFinished, &camPacket);
+        av_free_packet(&camPacket);
         if (camFrameFinished) {
 
-//            printf("C/P: %d %d %d --- %d\n", c->width, c->height, c->pix_fmt, pCamCodecCtx->pix_fmt);
-            
-            pCamSwsContext = sws_getContext(pCamCodecCtx->width, pCamCodecCtx->height,
-                                            pCamCodecCtx->pix_fmt,
-                                            c->width, c->height,
-                                            c->pix_fmt,
-                                            SWS_BICUBIC, NULL, NULL, NULL);
-            if (!pCamSwsContext) {
-                printf("Could not initialize the conversion context\n");
-                exit(-1);
-            }
-            
-            //printf("got picture: pts %d\n", camPacket.pts);
-            uint8_t *picbuf;
-            int picbuf_size;
-            picbuf_size = avpicture_get_size(c->pix_fmt, c->width, c->height);
-            picbuf = (uint8_t*)av_malloc(picbuf_size);
-            // convert picture to dest format
-            AVFrame *newpicture = av_frame_alloc();
-            avpicture_fill((AVPicture*)newpicture, picbuf, c->pix_fmt, c->width, c->height);
+//            uint8_t *picbuf;
+//            int picbuf_size;
+//            picbuf_size = avpicture_get_size(c->pix_fmt, c->width, c->height);
+//            picbuf = (uint8_t*)av_malloc(picbuf_size);
+//            // convert picture to dest format
+//            AVFrame *newpicture = av_frame_alloc();
+//            avpicture_fill((AVPicture*)newpicture, picbuf, c->pix_fmt, c->width, c->height);
             sws_scale(pCamSwsContext, pCamFrame->data, pCamFrame->linesize, 0, pCamCodecCtx->height, newpicture->data, newpicture->linesize);
             
                         newpicture->height =c->height;
@@ -669,32 +659,12 @@ static AVFrame *get_video_frame(OutputStream *ost)
             
             int pts = 0;
             
-//            if(camPacket.dts != AV_NOPTS_VALUE) {
-//                pts = av_frame_get_best_effort_timestamp(pCamFrame);
-//                //printf("Is not NOPTS: %d\n", pts);
-//            } else {
-//                //printf("Is NOPTS\n");
-//                pts = 0;
-//            }
-//            pts *= av_q2d(c->time_base);
-//            //printf("PTS new: %d\n", pts);
-//            
-//            nextPTS();
-            
-            //newpicture->pts = av_rescale_q(nextPTS(), (AVRational){1, c->sample_rate}, c->time_base);
-            //printf("---> %d, Samples: %d\n", newpicture->pts, nextPTS());
-            
             ost->frame = newpicture;
             ost->next_pts = ost->next_pts + 3000; // For 30 fps
-            //ost->next_pts = (1.0 / 30) * 90 * nextPTS();
+            //ost->next_pts = (1.0 / 30) * 90000
             ost->frame->pts = ost->next_pts;
-            //ost->frame->pts = pts;
-            //ost->frame->pts = ost->next_pts++;
             
             printf("Pts (video): %d\n", ost->frame->pts);
-            
-            //printf("We got it: %p and: %d %d PTS: %d\n", newpicture, pCamFrame->linesize[0], newpicture->linesize[0], ost->frame->pts);
-
             
             return ost->frame;
         }
@@ -755,6 +725,7 @@ static int write_video_frame(AVFormatContext *oc, OutputStream *ost)
     
     if (got_packet) {
         ret = write_frame(oc, &c->time_base, ost->st, &pkt);
+        av_free_packet(&pkt);
     } else {
         ret = 0;
     }
@@ -911,6 +882,24 @@ int main(int argc, char **argv)
     }
     pCamFrame = av_frame_alloc();
     
+    pCamSwsContext = sws_getContext(pCamCodecCtx->width, pCamCodecCtx->height,
+                                    pCamCodecCtx->pix_fmt,
+                                    video_st.enc->width, video_st.enc->height,
+                                    video_st.enc->pix_fmt,
+                                    SWS_BICUBIC, NULL, NULL, NULL);
+    if (!pCamSwsContext) {
+        printf("Could not initialize the conversion context\n");
+        exit(-1);
+    }
+    
+    uint8_t *picbuf;
+    int picbuf_size;
+    picbuf_size = avpicture_get_size(video_st.enc->pix_fmt, video_st.enc->width, video_st.enc->height);
+    picbuf = (uint8_t*)av_malloc(picbuf_size);
+    // convert picture to dest format
+    newpicture = av_frame_alloc();
+    avpicture_fill((AVPicture*)newpicture, picbuf, video_st.enc->pix_fmt, video_st.enc->width, video_st.enc->height);
+    
     /*
      * Audio
      */
@@ -999,8 +988,8 @@ int main(int argc, char **argv)
         
         printf("... Video\n");
         encode_video = !write_video_frame(oc, &video_st);
-        //printf("... Audio\n");
-        //encode_audio = !write_audio_frame(oc, &audio_st);
+//        printf("... Audio\n");
+//        encode_audio = !write_audio_frame(oc, &audio_st);
         
 //        printf("Video: %d / %d --- Audio: %d / %d --- static: %d\n", video_st.next_pts, video_st.enc->time_base, audio_st.next_pts, audio_st.enc->time_base, static_pts);
 //        nextPTS();
