@@ -117,12 +117,19 @@ static void log_packet(const AVFormatContext *fmt_ctx, const AVPacket *pkt)
 static int write_frame(AVFormatContext *fmt_ctx, const AVRational *time_base, AVStream *st, AVPacket *pkt)
 {
     /* rescale output packet timestamp values from codec to stream timebase */
-    av_packet_rescale_ts(pkt, *time_base, st->time_base);
+    //av_packet_rescale_ts(pkt, *time_base, st->time_base);
     pkt->stream_index = st->index;
+    
+    if (st->index == 1) {
+        // Rescale audio pts from 1152 to 2351
+        av_packet_rescale_ts(pkt, *time_base, st->time_base);
+    }
+    printf("PTS (stream: %d): %d\n", st->index, pkt->pts);
 
     /* Write the compressed frame to the media file. */
     log_packet(fmt_ctx, pkt);
-    return av_interleaved_write_frame(fmt_ctx, pkt);
+    //return av_interleaved_write_frame(fmt_ctx, pkt);
+    return av_write_frame(fmt_ctx, pkt);
 }
 
 /* Add an output stream. */
@@ -415,12 +422,7 @@ static int write_audio_frame(AVFormatContext *oc, OutputStream *ost)
     c = ost->enc;
 
     frame = get_audio_frame(ost);
-//    printf("Pts (audio): %d\n", frame->pts);
-//    int64_t pts = av_frame_get_best_effort_timestamp(frame);
-//    printf("Pts 1: %d\n", pts);
-//    int64_t pts2 = av_rescale_q(ost->samples_count, (AVRational){1, c->sample_rate}, c->time_base);
-//    printf("Pts 2: %d %d %d %d\n", pts2, ost->samples_count, c->sample_rate, c->time_base);
-//    
+
     ost->samples_count += 1152;
 //    
     
@@ -652,7 +654,7 @@ static AVFrame *get_video_frame(OutputStream *ost)
             //printf("---> %d, Samples: %d\n", newpicture->pts, nextPTS());
             
             ost->frame = newpicture;
-            ost->next_pts = ost->next_pts + 2351;
+            ost->next_pts = ost->next_pts + 3000; // For 30 fps
             //ost->next_pts = (1.0 / 30) * 90 * nextPTS();
             ost->frame->pts = ost->next_pts;
             //ost->frame->pts = pts;

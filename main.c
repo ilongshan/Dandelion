@@ -610,7 +610,7 @@ int video_thread(void *arg) {
         decode(is->video_ctx, pFrame, &frameFinished, packet);
         // Did we get a video frame?
         if (frameFinished) {
-            printf("PTS (video): %d\n", pFrame->pts);
+            printf("PTS (video): %d, %d\n", pFrame->pts, packet->dts);
             //printf("[video_thread] Frame is finished.\n");
             if(queue_picture(is, pFrame) < 0) {
                 break;
@@ -738,7 +738,10 @@ int decode_thread(void *arg) {
     
     int testing = 1;
     while (testing == 1) {
-        int result = avformat_open_input(&pFormatCtx, is->url, NULL, NULL);
+        
+        AVInputFormat *inputFormat =av_find_input_format("mpegts");
+        
+        int result = avformat_open_input(&pFormatCtx, is->url, inputFormat, NULL);
         if (result != 0) {
             printf("[decode_thread] Error: Can't open input.\n");
             return -1;
@@ -893,51 +896,7 @@ int decode_thread(void *arg) {
             } else if(packet->stream_index == audio_index) {
                 //printf("Audio...: %d - %d\n", c, is->audioq.nb_packets);
                 packet_queue_put(&is->audioq, packet);
-
-                
-//                if (is->audioq.nb_packets > 4) {
-//                    
-//                } else {
-//                    packet_queue_put(&is->audioq, packet);
-//                }
-                
                 c++;
-                //packet_queue_put(&is->audioq, packet);
-//                if (c > 120 && c < 200) {
-//                    
-//                } else {
-//                    packet_queue_put(&is->audioq, packet);
-//                }
-                
-                
-                
-                
-//                int ret = avcodec_decode_audio4( pCodecCtx, pFrame,&got_picture, packet);
-//                if ( ret < 0 ) {
-//                    printf("Error in decoding audio frame.\n");
-//                    return -1;
-//                }
-//                if ( got_picture > 0 ){
-//                    swr_convert(au_convert_ctx,&out_buffer, MAX_AUDIO_FRAME_SIZE,(const uint8_t **)pFrame->data , pFrame->nb_samples);
-//#if 1
-//                    printf("index:%5d\t pts:%lld\t packet size:%d\n",index,packet->pts,packet->size);
-//#endif
-//                    
-//                    index++;
-//                }
-//                
-//                
-//                    
-//
-//                while(audio_len>0)//Wait until finish
-//                    SDL_Delay(1);
-//                
-//                //Set audio buffer (PCM data)
-//                audio_chunk = (Uint8 *) out_buffer;
-//                //Audio buffer length
-//                audio_len =out_buffer_size;
-//                audio_pos = audio_chunk;
-                
             } else {
                 av_packet_unref(packet);
             }

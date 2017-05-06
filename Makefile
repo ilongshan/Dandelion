@@ -13,7 +13,8 @@ CFLAGS += -Wall -g
 CFLAGS := $(shell pkg-config --cflags $(FFMPEG_LIBS)) $(shell sdl2-config --cflags) $(CFLAGS)
 LDLIBS := $(shell pkg-config --libs $(FFMPEG_LIBS)) $(shell sdl2-config --libs) $(LDLIBS)
 
-EXAMPLES=       muxing                        \
+EXAMPLES=       main                        \
+		muxing
 
 OBJS=$(addsuffix .o,$(EXAMPLES))
 
