@@ -587,6 +587,58 @@ int queue_picture(VideoState *is, AVFrame *pFrame) {
     return 0;
 }
 
+int frame_to_jpeg(VideoState *is, AVFrame *frame, int frameNo) {
+    printf("Write frame to .jpg file\n");
+    AVCodec *jpegCodec = avcodec_find_encoder(AV_CODEC_ID_JPEG2000);
+    if (!jpegCodec) {
+        return -1;
+    }
+    AVCodecContext *jpegContext = avcodec_alloc_context3(jpegCodec);
+    if (!jpegContext) {
+        return -1;
+    }
+    
+    printf("Codec ctx: %d, %d\n", jpegContext->pix_fmt, jpegContext->bit_rate);
+    
+    jpegContext->pix_fmt = is->video_ctx->pix_fmt;
+    jpegContext->height = frame->height;
+    jpegContext->width = frame->width;
+    jpegContext->sample_aspect_ratio = is->video_ctx->sample_aspect_ratio;
+    jpegContext->time_base = is->video_ctx->time_base;
+//    jpegContext->compression_level = 100;
+        jpegContext->compression_level = 0;
+    jpegContext->thread_count = 1;
+    jpegContext->prediction_method = 1;
+    jpegContext->flags2 = 0;
+    //jpegContext->rc_max_rate = jpegContext->rc_min_rate = jpegContext->bit_rate = 80000000;
+    
+    if (avcodec_open2(jpegContext, jpegCodec, NULL) < 0) {
+        return -1;
+    }
+    
+    FILE *JPEGFile;
+    char JPEGFName[256];
+    
+    AVPacket packet = {.data = NULL, .size = 0};
+    av_init_packet(&packet);
+    int gotFrame;
+    av_dump_format(is->pFormatCtx, 0, "", 0);
+    
+    if (avcodec_encode_video2(jpegContext, &packet, frame, &gotFrame) < 0) {
+        return -1;
+    }
+    
+    sprintf(JPEGFName, "dvr-%06d.jpg", frameNo);
+    
+    JPEGFile = fopen(JPEGFName, "wb");
+    fwrite(packet.data, 1, packet.size, JPEGFile);
+    fclose(JPEGFile);
+    
+    av_free_packet(&packet);
+    avcodec_close(jpegContext);
+    return 0;
+}
+
 int video_thread(void *arg) {
     //printf("[video_thread]\n");
     VideoState *is = (VideoState *)arg;
@@ -600,6 +652,8 @@ int video_thread(void *arg) {
     // Allocate video frame
     pFrame = av_frame_alloc();
     
+    int count = 0;
+    
     while(true) {
         if(packet_queue_get(&is->videoq, packet, 1) < 0) {
             printf("[video_thread] We quit getting packages.\n");
@@ -610,6 +664,10 @@ int video_thread(void *arg) {
         decode(is->video_ctx, pFrame, &frameFinished, packet);
         // Did we get a video frame?
         if (frameFinished) {
+            count++;
+            if (count == 100) {
+                frame_to_jpeg(is, pFrame, count);
+            }
             printf("PTS (video): %d, %d\n", pFrame->pts, packet->dts);
             //printf("[video_thread] Frame is finished.\n");
             if(queue_picture(is, pFrame) < 0) {
