@@ -18,6 +18,9 @@
 #include <time.h>
 #include <assert.h>
 
+#include <arpa/inet.h>
+#include <sys/socket.h>
+
 // Increase:
 // analyzeduration
 // probesize
@@ -129,6 +132,44 @@ static  Uint32  audio_len;
 static  Uint8  *audio_pos;
 
 struct SwrContext *au_convert_ctx;
+
+#define SCROOBY_IP "127.0.0.1"
+#define SCROOBY_PORT 1235
+#define SCROOBY_BUFFER_SIZE 5000
+
+void network_send_udp(const void *data, size_t size) {
+    
+    int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s < 0) {
+        printf("Could not create socket");
+        exit(-1);
+    }
+    
+    struct sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = inet_addr(SCROOBY_IP);
+    addr.sin_port = htons(SCROOBY_PORT);
+
+    printf("Send data with length: %d", size);
+
+    int sizeLeftToSend = size;
+    for (int i = 0; i < size; i+=SCROOBY_BUFFER_SIZE) {
+        
+        int buffSizeToSend = SCROOBY_BUFFER_SIZE;
+        if (sizeLeftToSend < SCROOBY_BUFFER_SIZE) {
+            buffSizeToSend = sizeLeftToSend;
+        }
+        printf("Send: %d bytes\n", buffSizeToSend);
+        data = data + i;
+        
+        int result = sendto(s, data, buffSizeToSend, 0, (struct sockaddr *)&addr, sizeof(addr));
+        if (result < 0) {
+            printf("Could not send data. Result: %d\n", result);
+            exit(-1);
+        }
+        sizeLeftToSend -= SCROOBY_BUFFER_SIZE;
+    }
+}
 
 
 // Since we only have one decoding thread, the Big Struct can be global in case we need it.
@@ -589,7 +630,7 @@ int queue_picture(VideoState *is, AVFrame *pFrame) {
 
 int frame_to_jpeg(VideoState *is, AVFrame *frame, int frameNo) {
     printf("Write frame to .jpg file\n");
-    AVCodec *jpegCodec = avcodec_find_encoder(AV_CODEC_ID_JPEG2000);
+    AVCodec *jpegCodec = avcodec_find_encoder(AV_CODEC_ID_MJPEG);
     if (!jpegCodec) {
         return -1;
     }
@@ -600,7 +641,8 @@ int frame_to_jpeg(VideoState *is, AVFrame *frame, int frameNo) {
     
     printf("Codec ctx: %d, %d\n", jpegContext->pix_fmt, jpegContext->bit_rate);
     
-    jpegContext->pix_fmt = is->video_ctx->pix_fmt;
+    //jpegContext->pix_fmt = is->video_ctx->pix_fmt;
+    jpegContext->pix_fmt = AV_PIX_FMT_YUVJ420P;
     jpegContext->height = frame->height;
     jpegContext->width = frame->width;
     jpegContext->sample_aspect_ratio = is->video_ctx->sample_aspect_ratio;
@@ -634,6 +676,8 @@ int frame_to_jpeg(VideoState *is, AVFrame *frame, int frameNo) {
     fwrite(packet.data, 1, packet.size, JPEGFile);
     fclose(JPEGFile);
     
+    network_send_udp(packet.data, packet.size);
+    
     av_free_packet(&packet);
     avcodec_close(jpegContext);
     return 0;
@@ -665,7 +709,7 @@ int video_thread(void *arg) {
         // Did we get a video frame?
         if (frameFinished) {
             count++;
-            if (count == 100) {
+            if (count == 10) {
                 frame_to_jpeg(is, pFrame, count);
             }
             printf("PTS (video): %d, %d\n", pFrame->pts, packet->dts);
