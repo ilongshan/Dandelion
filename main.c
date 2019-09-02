@@ -1124,7 +1124,7 @@ int main(int argc, char* argv[]) {
     screen_mutex = SDL_CreateMutex();
     
     //char *url = "udp://127.0.0.1:1234?overrun_nonfatal=1";
-    char *url = "udp://192.168.0.24:6225?overrun_nonfatal=1";
+    char *url = "udp://192.168.0.24:1234?overrun_nonfatal=1";
     av_strlcpy(is->url, url, sizeof(is->url));
     
     printf("[main] Creating mutex.\n");
