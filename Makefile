@@ -14,7 +14,8 @@ CFLAGS := $(shell pkg-config --cflags $(FFMPEG_LIBS)) $(shell sdl2-config --cfla
 LDLIBS := $(shell pkg-config --libs $(FFMPEG_LIBS)) $(shell sdl2-config --libs) $(LDLIBS)
 
 EXAMPLES=       main                        \
-		muxing
+		muxing \
+		test
 
 OBJS=$(addsuffix .o,$(EXAMPLES))
 

@@ -428,7 +428,8 @@ void audio_callback(void *userdata, Uint8 *stream, int len) {
         ret = swr_convert(au_convert_ctx, &audio_buf,MAX_AUDIO_FRAME_SIZE, (const uint8_t **)pFrame->data, pFrame->nb_samples);
         //printf("index:%5d\t pts:%d / %d\n",packet->pts,packet->size, ret);
     }
-    SDL_MixAudio(stream, (uint8_t *)is->audio_buf, len, SDL_MIX_MAXVOLUME);
+    //SDL_MixAudio(stream, (uint8_t *)is->audio_buf, len, SDL_MIX_MAXVOLUME);
+    SDL_MixAudioFormat(stream, (uint8_t *)is->audio_buf, AUDIO_S16SYS, len, SDL_MIX_MAXVOLUME);
     //SDL_Delay(10);
     av_packet_unref(packet);
     //printf("<--- Callback done: %d\n", len);
@@ -676,7 +677,7 @@ int frame_to_jpeg(VideoState *is, AVFrame *frame, int frameNo) {
     fwrite(packet.data, 1, packet.size, JPEGFile);
     fclose(JPEGFile);
     
-    network_send_udp(packet.data, packet.size);
+    //network_send_udp(packet.data, packet.size);
     
     av_free_packet(&packet);
     avcodec_close(jpegContext);
@@ -766,9 +767,28 @@ int stream_component_open(VideoState *is, int stream_index) {
         wanted_spec.callback = audio_callback;
         wanted_spec.userdata = is;
         
-        if(SDL_OpenAudio(&wanted_spec, &spec) < 0) {
+        /*if(SDL_OpenAudio(&wanted_spec, &spec) < 0) {
             fprintf(stderr, "SDL_OpenAudio: %s\n", SDL_GetError());
             return -1;
+        }*/
+
+        const char* d = SDL_GetAudioDeviceName(0, 1);
+        printf("Capture: %s", d);
+        const char* e = SDL_GetAudioDeviceName(0, 0);
+        printf("Device: %s", e);
+        // Returns a valid device ID that is > 0 on success or 0 on failure
+        //int audioDeviceId = SDL_OpenAudioDevice(d, 1, &wanted_spec, &spec, 0);
+        int audioDeviceId = SDL_OpenAudioDevice(NULL, 0, &wanted_spec, &spec, SDL_AUDIO_ALLOW_ANY_CHANGE);
+        printf("[stream_component_open] Device id: %d.", audioDeviceId);
+        if (audioDeviceId == 0) {
+            printf("[stream_component_open] Failed to open audio: %s.", SDL_GetError());
+            return -1;
+        } else {
+            if (spec.format != wanted_spec.format) {
+                printf("[stream_component_open] We didn't get Float32 audio format.");
+            }
+            // Start audio playing
+            SDL_PauseAudioDevice(audioDeviceId, 0);
         }
     }
     if(avcodec_open2(codecCtx, codec, NULL) < 0) {
@@ -889,14 +909,14 @@ int decode_thread(void *arg) {
         }
         if (audio_index < 0) {
             printf("[decode_thread] Could not find a audio stream.\n");
-            return -1;
+            //return -1;
         }
         
         stream_component_open(is, video_index);
-        stream_component_open(is, audio_index);
+        //stream_component_open(is, audio_index);
         
         // Get a pointer to the codec context for the audio stream
-        pCodecCtx=pFormatCtx->streams[audio_index]->codec;
+        /*pCodecCtx=pFormatCtx->streams[audio_index]->codec;
         
         // Find the decoder for the audio stream
         pCodec=avcodec_find_decoder(pCodecCtx->codec_id);
@@ -966,7 +986,7 @@ int decode_thread(void *arg) {
         int index = 0;
         packet=(AVPacket *)av_malloc(sizeof(AVPacket));
         
-        avformat_flush(is->pFormatCtx);
+        avformat_flush(is->pFormatCtx);*/
         
         int c = 0;
         
@@ -1071,10 +1091,16 @@ void video_refresh_timer(void *userdata) {
     }
 }
 
+void intHandler(int dummy) {
+    exit(1);
+}
+
 int main(int argc, char* argv[]) {
     
     SDL_Event       event;
     VideoState      *is;
+
+    signal(SIGINT, intHandler);
     
     is = av_mallocz(sizeof(VideoState));
     
@@ -1097,7 +1123,8 @@ int main(int argc, char* argv[]) {
     printf("[main] Success: SDL initialized.\n");
     screen_mutex = SDL_CreateMutex();
     
-    char *url = "udp://127.0.0.1:1234?overrun_nonfatal=1";
+    //char *url = "udp://127.0.0.1:1234?overrun_nonfatal=1";
+    char *url = "udp://192.168.0.24:6225?overrun_nonfatal=1";
     av_strlcpy(is->url, url, sizeof(is->url));
     
     printf("[main] Creating mutex.\n");
